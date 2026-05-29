@@ -1,7 +1,7 @@
-# MCC — 超级智能体客户端
+# TCC — 超级智能体客户端
 
 ## 概述
-MCC 是一款运行在 Android 平板上的原生 AI 对话客户端，深度集成 Claude Code 能力的自主智能体平台。
+TCC 是一款运行在 Android 平板上的原生 AI 对话客户端，深度集成 Claude Code 能力的自主智能体平台。
 100% Kotlin 原生开发，无 WebView，无后端服务。
 
 ---
@@ -72,7 +72,7 @@ MCC 是一款运行在 Android 平板上的原生 AI 对话客户端，深度集
 
 ```
 ┌──────────────────────────────────────┐
-│           MCC APK (com.mcc)          │
+│           TCC APK (com.mcc)          │
 ├──────────────────────────────────────┤
 │  MainActivity                        │
 │  ├── SidebarView ← 对话列表          │
@@ -135,11 +135,11 @@ MCC 是一款运行在 Android 平板上的原生 AI 对话客户端，深度集
 python3 android/build.py
 
 # 安装到设备
-cp android/dist/MCC.apk /sdcard/Download/
-termux-open /sdcard/Download/MCC.apk
+cp android/dist/TCC.apk /sdcard/Download/
+termux-open /sdcard/Download/TCC.apk
 
 # 查看日志
-logcat -s MCC
+logcat -s TCC
 logcat -b crash
 ```
 

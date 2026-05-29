@@ -88,7 +88,7 @@ class AXMLWriter:
             '.MainActivity', 'MCC', '1.0.0',
             'android.intent.action.MAIN', 'android.intent.category.LAUNCHER',
             'android', 'orientation|keyboardHidden|screenSize',
-            'adjustResize', 'com.mcc', '16']: self.get_str(s)
+            'adjustResize', 'com.tcc', '16']: self.get_str(s)
 
         # P = android-namespace attr, B = bare attr (no namespace)
         A = lambda ns, n, vt, vd, vs: (ns, n, vt, vd, vs)
@@ -99,7 +99,7 @@ class AXMLWriter:
         rmap = self.write_map(ATTR_IDS)
         ns = self.write_ns(0x0100, self.get_str('android'), self.get_str(ANDROID_NS))
         hdr = (pool + rmap + ns +
-            self.write_tag('manifest', [B('package', 0x03, -1, self.get_str('com.mcc')),
+            self.write_tag('manifest', [B('package', 0x03, -1, self.get_str('com.tcc')),
                 P('versionCode', 0x10, 1, -1),
                 P('versionName', 0x03, -1, self.get_str('1.0.0')),
                 P('compileSdkVersion', 0x10, 35, -1),
@@ -161,7 +161,7 @@ def build():
         f.write(axml)
 
     print("  Creating APK...")
-    apk = os.path.join(OUT, 'MCC.apk')
+    apk = os.path.join(OUT, 'TCC.apk')
     with zipfile.ZipFile(apk, 'w', zipfile.ZIP_DEFLATED) as z:
         zi = zipfile.ZipInfo('AndroidManifest.xml')
         zi.compress_type = zipfile.ZIP_STORED
@@ -184,7 +184,7 @@ def build():
         '--key-pass', 'pass:android', '--out', sp, apk])
     shutil.move(sp, apk)
     sz = os.path.getsize(apk)
-    print(f"\n  MCC APK build complete!  Size: {sz//1024} KB  Package: com.mcc\n")
+    print(f"\n  TCC APK build complete!  Size: {sz//1024} KB  Package: com.tcc\n")
 
 if __name__ == '__main__':
     build()
