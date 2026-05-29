@@ -304,3 +304,38 @@ build.py 生成的 AndroidManifest.xml 不含 <uses-permission android:name="and
 8. **build.py 只编译 .kt** — `if fn.endswith('.kt')`，不要创建新的 .java 源文件
 9. **包名固定 com.tcc** — 不要改 package 声明
 10. **异常必须处理** — 后台线程的异常会静默丢失，所有 `Thread{}` 内要有 try-catch
+
+### Git 推送相关
+
+```
+仓库地址: https://github.com/doraasn/tcc
+分支: main
+本地路径: /data/data/com.termux/files/home/tcc
+
+推送需要:
+1. 代理 (Clash 7890 端口, 国内直连 GitHub 会超时)
+2. GitHub Personal Access Token 认证
+
+禁用 git TLS 验证 (代理/SSL 兼容问题):
+git -C /data/data/com.termux/files/home/tcc config http.sslVerify false
+
+设置代理:
+git -C /data/data/com.termux/files/home/tcc config http.proxy http://127.0.0.1:7890
+git -C /data/data/com.termux/files/home/tcc config https.proxy http://127.0.0.1:7890
+
+推送命令:
+git -C /data/data/com.termux/files/home/tcc \
+  remote set-url origin https://doraasn:<TOKEN>@github.com/doraasn/tcc.git
+git -C /data/data/com.termux/files/home/tcc push origin main
+# 推送后记得清除 URL 中的 token:
+git -C /data/data/com.termux/files/home/tcc remote set-url origin https://github.com/doraasn/tcc.git
+
+Token: <见本地 .claude/skills/tcc-git/SKILL.md>
+账号: doraasn (doraasn@yeah.net)
+邮箱: doraasn@yeah.net
+
+先提交再推送:
+git -C /data/data/com.termux/files/home/tcc add -A
+git -C /data/data/com.termux/files/home/tcc commit -m "描述改动"
+git -C /data/data/com.termux/files/home/tcc push origin main
+```
