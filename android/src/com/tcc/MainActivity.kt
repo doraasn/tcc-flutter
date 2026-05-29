@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import android.util.Log
@@ -58,8 +59,6 @@ class MainActivity : Activity() {
     private lateinit var topBarTitle: TextView
     private lateinit var topBarModel: TextView
     private lateinit var rootView: FrameLayout
-    private lateinit var sendStopButton: View
-
     private val config by lazy { ConfigManager.getInstance(this) }
     private val convManager by lazy { ConversationManager.getInstance(this) }
     private var currentConv: Conversation? = null
@@ -67,6 +66,7 @@ class MainActivity : Activity() {
     private var isStreaming = false
     private var currentSessionId: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var setupStatusText: TextView? = null
     private var isFirstMessage = true
 
     // 应用入口 - 初始化界面和加载设置
@@ -98,6 +98,10 @@ class MainActivity : Activity() {
         input = MessageInputView(this)
         mainContent.addView(input, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
+        // 环境初始化加载页
+        val setupView = createSetupView()
+        root.addView(setupView, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+
         root.addView(mainContent, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         // Sidebar
@@ -126,21 +130,55 @@ class MainActivity : Activity() {
 
         setContentView(root)
 
-        setupCallbacks()
-        applyFontSizeToViews()
-        loadConversations()
-
-        // Auto-extract Termux bootstrap on first launch
+        // 首次启动：显示加载页 + 进度条
         if (!TermuxBootstrap.isInstalled(this)) {
+            mainContent.visibility = View.GONE
+            setupView.visibility = View.VISIBLE
             Thread {
-                TermuxBootstrap.install(this, null)
+                try {
+                    val ok = TermuxBootstrap.install(this) { msg ->
+                        mainHandler.post { setupStatusText?.text = msg }
+                    }
+                    // 写诊断日志
+                    try { File("/sdcard/Download/tcc_install.txt").writeText(
+                        "install returned: $ok\nbash exists: ${java.io.File(TermuxBootstrap.getPrefixDir(this@MainActivity), "bin/bash").exists()}\ncanExec: ${java.io.File(TermuxBootstrap.getPrefixDir(this@MainActivity), "bin/bash").canExecute()}"
+                    ) } catch (_: Exception) {}
+                    if (ok) {
+                        mainHandler.post {
+                            setupView.visibility = View.GONE
+                            mainContent.visibility = View.VISIBLE
+                            setupCallbacks()
+                            applyFontSizeToViews()
+                            loadConversations()
+                            if (config.getApiKey().isEmpty()) {
+                                settings.visibility = View.VISIBLE
+                                settings.loadConfig()
+                            }
+                        }
+                    } else {
+                        mainHandler.post {
+                            setupStatusText?.text = "环境安装失败，请重启应用重试"
+                        }
+                    }
+                } catch (e: Exception) {
+                    val stack = java.io.StringWriter()
+                    e.printStackTrace(java.io.PrintWriter(stack))
+                    mainHandler.post {
+                        setupStatusText?.text = "安装异常: ${e.message}"
+                    }
+                    try { File("/sdcard/Download/tcc_error.txt").writeText(stack.toString()) } catch (_: Exception) {}
+                }
             }.start()
-        }
-
-        if (config.getApiKey().isEmpty()) {
-            showToast("请先在设置中配置 API Key")
-            settings.visibility = View.VISIBLE
-            settings.loadConfig()
+        } else {
+            setupView.visibility = View.GONE
+            mainContent.visibility = View.VISIBLE
+            setupCallbacks()
+            applyFontSizeToViews()
+            loadConversations()
+            if (config.getApiKey().isEmpty()) {
+                settings.visibility = View.VISIBLE
+                settings.loadConfig()
+            }
         }
     }
 
@@ -198,6 +236,47 @@ class MainActivity : Activity() {
                 maxLines = 1
             }
             addView(topBarModel)
+        }
+    }
+
+    // 创建首次启动加载页
+    private fun createSetupView(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(BG)
+            setPadding(dp(32), dp(32), dp(32), dp(32))
+
+            addView(TextView(this@MainActivity).apply {
+                text = "TCC"
+                setTextColor(ACCENT)
+                textSize = 48f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Claude Code 智能客户端"
+                setTextColor(TEXT_TERTIARY)
+                textSize = 16f
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(48) }
+            })
+
+            // 进度条
+            addView(ProgressBar(this@MainActivity).apply {
+                isIndeterminate = true
+                layoutParams = LinearLayout.LayoutParams(dp(200), LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(24) }
+            })
+
+            setupStatusText = TextView(this@MainActivity).apply {
+                text = "正在准备运行环境…"
+                setTextColor(TEXT_SECONDARY)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+            }
+            addView(setupStatusText!!)
         }
     }
 
@@ -337,6 +416,7 @@ class MainActivity : Activity() {
     // 创建新对话
     private fun newConversation() {
         saveCurrentConversation()
+        currentSessionId = null
 
         try {
             val model = config.getModel().ifBlank { "claude-sonnet-4-20250514" }
@@ -385,6 +465,8 @@ class MainActivity : Activity() {
             try {
                 File("/sdcard/Download/mcc_error.txt").writeText(stack)
             } catch (_: Exception) {}
+            isStreaming = false
+            input.isEnabled = true
             showToast("错误: ${e.message}")
         }
     }

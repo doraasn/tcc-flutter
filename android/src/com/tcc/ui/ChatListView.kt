@@ -442,6 +442,7 @@ class ChatListView(context: Context) : ScrollView(context) {
             contentText.setTextColor(TEXT_PRIMARY)
             contentText.textSize = baseFontSize.toFloat()
             contentText.setLineSpacing(dp(4).toFloat(), 1.5f)
+            contentText.setTextIsSelectable(true)
             addView(contentText, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
             timeText.setTextColor(TEXT_TERTIARY)

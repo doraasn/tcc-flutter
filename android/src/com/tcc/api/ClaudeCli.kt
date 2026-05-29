@@ -25,6 +25,7 @@ class ClaudeCli(private val context: Context) {
 
     // 会话 ID - 用于 Claude CLI 会话管理（预留未来使用）
     // 设置此值后，下次请求将使用 --resume 恢复该会话
+    @Volatile
     var sessionId: String? = null
 
     // 流式响应回调接口
@@ -49,6 +50,11 @@ class ClaudeCli(private val context: Context) {
     ) {
         aborted = false
         doneSent = false
+
+        if (!TermuxBootstrap.isInstalled(context)) {
+            callback.onEvent(StreamEvent.Error("Termux 环境未安装或未就绪"))
+            return
+        }
 
         Thread {
             try {
@@ -87,9 +93,11 @@ class ClaudeCli(private val context: Context) {
                 pb.redirectErrorStream(true)
                 process = pb.start()
 
-                // 按字符读取 stdout 实现真流式输出
+                // 按缓冲区读取 stdout，每~80ms 或每 64+ 字符刷新一次（避免逐字 UI 更新）
                 val reader = BufferedReader(InputStreamReader(process!!.inputStream))
                 val outputBuilder = StringBuilder()
+                val buffer = StringBuilder()
+                var lastFlush = System.currentTimeMillis()
                 var charCode: Int
                 while (reader.read().also { charCode = it } != -1) {
                     if (aborted) {
@@ -99,9 +107,19 @@ class ClaudeCli(private val context: Context) {
                     }
                     val ch = charCode.toChar()
                     outputBuilder.append(ch)
-                    callback.onEvent(StreamEvent.Chunk(ch.toString()))
+                    buffer.append(ch)
+                    val now = System.currentTimeMillis()
+                    if (buffer.length >= 64 || (now - lastFlush) > 80) {
+                        callback.onEvent(StreamEvent.Chunk(buffer.toString()))
+                        buffer.clear()
+                        lastFlush = now
+                    }
                 }
                 reader.close()
+                // 刷新剩余字符
+                if (buffer.isNotEmpty()) {
+                    callback.onEvent(StreamEvent.Chunk(buffer.toString()))
+                }
 
                 // 等待进程自然结束
                 val exitCode = process!!.waitFor()
@@ -182,9 +200,7 @@ class ClaudeCli(private val context: Context) {
         if (match != null) {
             sessionId = match.groupValues[1]
             Log.d(TAG, "检测到会话 ID: $sessionId")
-        } else {
-            // 未检测到会话 ID，重置以便下次创建新会话
-            sessionId = null
         }
+        // 不匹配时不重置 sessionId（保留现有值，以支持 --resume 场景）
     }
 }

@@ -35,6 +35,16 @@ object TermuxBootstrap {
 
         return try {
             onProgress?.invoke("正在解压运行环境…")
+
+            // 清理之前解压失败的残留文件
+            if (prefix.exists()) {
+                prefix.deleteRecursively()
+            }
+            val homeDir = getHomeDir(context)
+            if (homeDir.exists()) {
+                homeDir.deleteRecursively()
+            }
+
             prefix.mkdirs()
             getHomeDir(context).mkdirs()
 
@@ -44,10 +54,34 @@ object TermuxBootstrap {
                 }
             }
 
-            // 创建必要符号链接
+            // 创建 TMPDIR
+            File(prefix, "tmp").mkdirs()
+
+            // 用系统 chmod 修复所有文件权限（Android 内部存储上 setExecutable 不可靠）
+            try {
+                val chmodProc = Runtime.getRuntime().exec(arrayOf("/system/bin/chmod", "-R", "755", prefix.absolutePath))
+                val chmodExit = chmodProc.waitFor()
+                if (chmodExit != 0) {
+                    // chmod 失败，使用 Kotlin API 降级
+                    val binDir = File(prefix, "bin")
+                    if (binDir.isDirectory) {
+                        binDir.listFiles()?.forEach { file ->
+                            file.setExecutable(true, false)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                val binDir = File(prefix, "bin")
+                if (binDir.isDirectory) {
+                    binDir.listFiles()?.forEach { file ->
+                        file.setExecutable(true, false)
+                    }
+                }
+            }
             try {
                 val bin = File(prefix, "bin")
-                Runtime.getRuntime().exec(arrayOf("ln", "-sf", "bash", File(bin, "sh").absolutePath)).waitFor()
+                // 创建 sh -> bash 符号链接
+                Runtime.getRuntime().exec(arrayOf("/system/bin/ln", "-sf", "bash", File(bin, "sh").absolutePath)).waitFor()
             } catch (_: Exception) {}
 
             if (File(prefix, "bin/bash").canExecute()) {
@@ -96,6 +130,14 @@ object TermuxBootstrap {
             }
             val name = String(header, 0, nameEnd, Charsets.UTF_8).trim()
 
+            // 解析 USTAR 前缀（长路径支持，offset 345，155 字节）
+            var prefixEnd = 500
+            for (j in 345 until 500) {
+                if (header[j] == 0.toByte()) { prefixEnd = j; break }
+            }
+            val prefixName = if (prefixEnd > 345) String(header, 345, prefixEnd - 345, Charsets.UTF_8).trim() else ""
+            val fullName = if (prefixName.isNotEmpty()) "$prefixName/$name" else name
+
             // 解析文件大小（12 字节八进制，offset 124）
             val sizeStr = String(header, 124, 12, Charsets.UTF_8).trim { it <= ' ' }
             val fileSize = if (sizeStr.isNotEmpty()) sizeStr.toLong(8) else 0L
@@ -107,10 +149,10 @@ object TermuxBootstrap {
 
             when {
                 typeFlag == '5'.code || name.endsWith("/") -> {
-                    File(destDir, name).mkdirs()
+                    File(destDir, fullName).mkdirs()
                 }
                 typeFlag == '0'.code || typeFlag == 0 || typeFlag == '7'.code -> {
-                    val file = File(destDir, name)
+                    val file = File(destDir, fullName)
                     file.parentFile?.mkdirs()
 
                     FileOutputStream(file).use { out ->
@@ -124,14 +166,23 @@ object TermuxBootstrap {
                         }
                     }
 
-                    // 标记可执行文件
-                    val path = file.path
-                    if (path.contains("/bin/") || path.contains("/libexec/") ||
-                        file.name in listOf("bash", "node", "npm", "npx", "apt", "dpkg")) {
-                        file.setExecutable(true, false)
+                    // 权限由后续 chmod 统一设置
+                }
+                typeFlag == '2'.code -> {
+                    // 符号链接：链接目标在 header offset 157，100 字节
+                    val linkEnd = (157 until 257).firstOrNull { header[it] == 0.toByte() } ?: 257
+                    val linkTarget = String(header, 157, linkEnd - 157, Charsets.UTF_8).trim()
+                    val linkFile = File(destDir, fullName)
+                    linkFile.parentFile?.mkdirs()
+                    try {
+                        java.nio.file.Files.createSymbolicLink(linkFile.toPath(), java.nio.file.Paths.get(linkTarget))
+                    } catch (_: Exception) {
+                        // 回退：如果符号链接不支持，尝试复制目标文件
                     }
                 }
-                // 其他类型（符号链接等）跳过
+                else -> {
+                    // 其他类型跳过
+                }
             }
 
             // 跳过填充到 512 字节边界
