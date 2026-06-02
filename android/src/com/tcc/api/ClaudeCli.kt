@@ -9,39 +9,71 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 
-// Claude Code CLI 流式聊天客户端 - 通过 ProcessBuilder 调用 claude 命令行
-// 替代 AnthropicClient，使用本地 Termux 环境中的 Claude Code CLI
 class ClaudeCli(private val context: Context) {
 
     companion object {
         private const val TAG = "TCC"
+        private const val MAX_LOG_SIZE = 500 * 1024L // 500KB
+        private val logBuffer = StringBuilder()
+        private var logFile: File? = null
+
+        fun initLog(context: Context) {
+            logBuffer.clear()
+            val logsDir = File(context.filesDir, "logs")
+            if (!logsDir.exists()) logsDir.mkdirs()
+            logFile = File(logsDir, "tcc.log")
+            // 轮转：超过 500KB 时清空重建
+            try {
+                val f = logFile ?: return
+                if (f.exists() && f.length() > MAX_LOG_SIZE) {
+                    f.writeText("")
+                }
+            } catch (_: Exception) {}
+        }
+
+        fun getLog(): String = synchronized(logBuffer) { logBuffer.toString() }
+
+        fun getLogFile(): File? = logFile
+
+        private fun log(msg: String) {
+            Log.d(TAG, msg)
+            val ts = System.currentTimeMillis() / 1000
+            synchronized(logBuffer) { logBuffer.appendLine("$ts $msg") }
+            writeToFile("INFO", msg)
+        }
+
+        private fun loge(msg: String) {
+            Log.e(TAG, msg)
+            val ts = System.currentTimeMillis() / 1000
+            synchronized(logBuffer) { logBuffer.appendLine("$ts ERR: $msg") }
+            writeToFile("ERROR", msg)
+        }
+
+        private fun writeToFile(level: String, msg: String) {
+            try {
+                val f = logFile ?: return
+                if (f.exists() && f.length() > MAX_LOG_SIZE) {
+                    f.writeText("")
+                }
+                val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                    .format(java.util.Date())
+                f.appendText("$time [$level] $msg\n")
+            } catch (_: Exception) {}
+        }
     }
 
-    @Volatile
-    private var aborted = false
-
+    @Volatile var sessionId: String? = null
+    @Volatile private var aborted = false
     private var process: Process? = null
-    private var doneSent = false
 
-    // 会话 ID - 用于 Claude CLI 会话管理（预留未来使用）
-    // 设置此值后，下次请求将使用 --resume 恢复该会话
-    @Volatile
-    var sessionId: String? = null
+    fun interface StreamCallback { fun onEvent(event: StreamEvent) }
 
-    // 流式响应回调接口
-    fun interface StreamCallback {
-        fun onEvent(event: StreamEvent)
-    }
-
-    // 流式事件密封类
     sealed class StreamEvent {
         data class Chunk(val text: String) : StreamEvent()
         data class Done(val stopReason: String) : StreamEvent()
         data class Error(val message: String) : StreamEvent()
     }
 
-    // 发起流式 CLI 聊天请求
-    // 在后台线程中启动 claude 进程，按字符读取输出实现真流式
     fun streamChat(
         messages: List<Message>,
         systemPrompt: String?,
@@ -49,158 +81,187 @@ class ClaudeCli(private val context: Context) {
         callback: StreamCallback
     ) {
         aborted = false
-        doneSent = false
 
         if (!TermuxBootstrap.isInstalled(context)) {
-            callback.onEvent(StreamEvent.Error("Termux 环境未安装或未就绪"))
-            return
+            callback.onEvent(StreamEvent.Error("Termux 环境未安装")) ; return
         }
 
         Thread {
             try {
-                // 获取 Termux 环境变量（PATH、HOME、LD_LIBRARY_PATH 等）
-                val env = HashMap(TermuxBootstrap.buildEnvironment(context))
-
-                // 注入 API Key 作为环境变量，供 claude 命令使用
-                val apiKey = config.getApiKey()
-                if (apiKey.isEmpty()) {
-                    callback.onEvent(StreamEvent.Error("API Key 未配置"))
-                    return@Thread
+                val provider = config.getActiveProvider() ?: run {
+                    callback.onEvent(StreamEvent.Error("未配置供应商")); return@Thread
                 }
-                env["ANTHROPIC_API_KEY"] = apiKey
 
-                // 从最后一条用户消息构建提示词
-                // Claude CLI 通过会话管理自己的上下文，无需发送完整历史
+                val realApiKey = provider.env["ANTHROPIC_AUTH_TOKEN"] ?: provider.env["ANTHROPIC_API_KEY"] ?: ""
+                val realBaseUrl = provider.env["ANTHROPIC_BASE_URL"] ?: ""
+                val model = provider.env["ANTHROPIC_MODEL"] ?: ""
+
+                log("provider=${provider.name} base=$realBaseUrl model=$model key=${realApiKey.take(8)}...")
+
+                if (realApiKey.isEmpty()) {
+                    callback.onEvent(StreamEvent.Error("API Key 未配置")); return@Thread
+                }
+
                 val lastUserMsg = messages.lastOrNull { it.role == "user" }
-                    ?: run {
-                        callback.onEvent(StreamEvent.Error("没有用户消息"))
-                        return@Thread
-                    }
-
-                // 构建 prompt 和命令
+                    ?: run { callback.onEvent(StreamEvent.Error("没有用户消息")); return@Thread }
                 val prompt = buildPrompt(lastUserMsg.content, systemPrompt)
-                val cmd = buildCommand(prompt)
+                log("prompt len=${prompt.length}")
 
-                // 获取 Termux 中的 bash 路径
                 val prefix = TermuxBootstrap.getPrefixDir(context)
-                val bash = File(prefix, "bin/bash").absolutePath
-                Log.d(TAG, "启动 Claude CLI: bash -c $cmd")
+                val homeDir = TermuxBootstrap.getHomeDir(context)
+                val claudeBin = File(prefix, "bin/claude.exe")
+                log("claude.exe exists=${claudeBin.exists()} size=${claudeBin.length()}")
 
-                // 启动进程
-                val pb = ProcessBuilder(bash, "-c", cmd)
-                pb.environment().putAll(env)
-                // 合并 stderr 到 stdout，以便捕获所有输出（包括会话信息）
-                pb.redirectErrorStream(true)
-                process = pb.start()
+                val promptFile = File(homeDir, ".tcc_prompt.txt")
+                promptFile.writeText(prompt)
 
-                // 按缓冲区读取 stdout，每~80ms 或每 64+ 字符刷新一次（避免逐字 UI 更新）
+                val args = mutableListOf("--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose")
+                if (sessionId != null) { args.add("--resume"); args.add(sessionId!!) }
+
+                val stderrFile = File(homeDir, ".tcc_stderr.txt")
+                val shellCmd = "cd '${homeDir.absolutePath}' && cat '${promptFile.absolutePath}' | '${claudeBin.absolutePath}' ${args.joinToString(" ")} 2>'${stderrFile.absolutePath}'"
+                log("cmd: $shellCmd")
+
+                val env = HashMap(TermuxBootstrap.buildEnvironment(context))
+                env["ANTHROPIC_BASE_URL"] = realBaseUrl
+                env["ANTHROPIC_API_KEY"] = realApiKey
+                env["ANTHROPIC_AUTH_TOKEN"] = realApiKey
+                env["ANTHROPIC_MODEL"] = model
+
+                for ((key, value) in provider.env) {
+                    if (value.isNotEmpty()) {
+                        env[key] = value
+                    }
+                }
+                env["LD_PRELOAD"] = ""
+                env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
+
+                // 诊断日志：显示关键环境变量
+                log("ENV ANTHROPIC_BASE_URL=${env["ANTHROPIC_BASE_URL"]}")
+                log("ENV ANTHROPIC_AUTH_TOKEN=${env["ANTHROPIC_AUTH_TOKEN"]?.take(20)}...")
+                log("ENV ANTHROPIC_MODEL=${env["ANTHROPIC_MODEL"]}")
+
+                process = TermuxBootstrap.execBash(context, shellCmd, extraEnv = env)
+                log("process started")
+
                 val reader = BufferedReader(InputStreamReader(process!!.inputStream))
-                val outputBuilder = StringBuilder()
-                val buffer = StringBuilder()
+                val allOutput = StringBuilder()
+                val textBuffer = StringBuilder()
                 var lastFlush = System.currentTimeMillis()
-                var charCode: Int
-                while (reader.read().also { charCode = it } != -1) {
-                    if (aborted) {
+                val startTime = System.currentTimeMillis()
+                var lineCount = 0
+
+                while (true) {
+                    val elapsed = (System.currentTimeMillis() - startTime) / 1000
+                    if (elapsed > 120) {
+                        loge("TIMEOUT 120s lines=$lineCount")
                         process!!.destroy()
-                        reader.close()
+                        callback.onEvent(StreamEvent.Error("超时 120s"))
                         return@Thread
                     }
-                    val ch = charCode.toChar()
-                    outputBuilder.append(ch)
-                    buffer.append(ch)
+                    if (!reader.ready()) {
+                        try { process!!.exitValue(); loge("EXITED lines=$lineCount"); break }
+                        catch (_: IllegalThreadStateException) {}
+                        Thread.sleep(200)
+                        continue
+                    }
+                    val line = reader.readLine() ?: break
+                    lineCount++
+                    allOutput.append(line).append('\n')
+                    if (lineCount <= 20) log("[$lineCount] ${line.take(200)}")
+                    if (line.isEmpty()) continue
+
+                    try {
+                        val json = org.json.JSONObject(line)
+                        handleJsonEvent(json, textBuffer, callback)
+                    } catch (_: Exception) {
+                        textBuffer.append(line).append('\n')
+                    }
+
                     val now = System.currentTimeMillis()
-                    if (buffer.length >= 64 || (now - lastFlush) > 80) {
-                        callback.onEvent(StreamEvent.Chunk(buffer.toString()))
-                        buffer.clear()
-                        lastFlush = now
+                    if (textBuffer.length >= 64 || (now - lastFlush) > 80) {
+                        if (textBuffer.isNotEmpty()) {
+                            callback.onEvent(StreamEvent.Chunk(textBuffer.toString()))
+                            textBuffer.clear(); lastFlush = now
+                        }
                     }
                 }
                 reader.close()
-                // 刷新剩余字符
-                if (buffer.isNotEmpty()) {
-                    callback.onEvent(StreamEvent.Chunk(buffer.toString()))
-                }
+                if (textBuffer.isNotEmpty()) callback.onEvent(StreamEvent.Chunk(textBuffer.toString()))
 
-                // 等待进程自然结束
+                // 读 stderr
+                try {
+                    if (stderrFile.exists()) {
+                        val stderrContent = stderrFile.readText().trim()
+                        if (stderrContent.isNotEmpty()) loge("STDERR: ${stderrContent.take(1000)}")
+                        stderrFile.delete()
+                    }
+                } catch (_: Exception) {}
+
                 val exitCode = process!!.waitFor()
+                log("=== END exit=$exitCode lines=$lineCount ===")
 
-                if (aborted) return@Thread
-
-                if (exitCode == 0) {
-                    // 处理完成，从输出中解析会话 ID 供下次使用
-                    parseAndStoreSessionId(outputBuilder.toString())
-                    if (!doneSent) {
-                        doneSent = true
-                        callback.onEvent(StreamEvent.Done("end_turn"))
-                    }
-                } else {
-                    // 非零退出码表示错误
-                    if (!doneSent) {
-                        doneSent = true
-                        Log.e(TAG, "Claude CLI 异常退出: exit code $exitCode")
-                        callback.onEvent(StreamEvent.Error("CLI 进程退出码: $exitCode"))
-                    }
+                if (exitCode != 0 && !aborted) {
+                    val output = allOutput.toString().trim()
+                    loge("FAIL exit=$exitCode output=${output.take(500)}")
+                    callback.onEvent(StreamEvent.Error("退出码: $exitCode\n${output.take(300)}"))
+                } else if (lineCount == 0 && !aborted) {
+                    callback.onEvent(StreamEvent.Error("无输出，退出码=$exitCode"))
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Claude CLI 异常: ${e.javaClass.name}: ${e.message}", e)
-                if (!aborted && !doneSent) {
-                    doneSent = true
-                    callback.onEvent(StreamEvent.Error(e.message ?: "未知错误"))
-                }
+                loge("EXCEPTION: ${e.message}")
+                if (!aborted) callback.onEvent(StreamEvent.Error(e.message ?: "未知错误"))
             } finally {
-                process?.destroy()
-                process = null
+                process?.destroy(); process = null
             }
         }.start()
     }
 
-    // 中止当前请求 - 销毁进程
-    fun abort() {
-        aborted = true
-        process?.destroy()
+    private fun handleJsonEvent(json: org.json.JSONObject, textBuffer: StringBuilder, callback: StreamCallback) {
+        when (json.optString("type", "")) {
+            "system" -> {
+                val sid = json.optString("session_id", "")
+                if (sid.isNotEmpty()) { sessionId = sid; log("session=$sid") }
+            }
+            "assistant" -> {
+                val msg = json.optJSONObject("message") ?: return
+                val content = msg.optJSONArray("content") ?: return
+                for (i in 0 until content.length()) {
+                    val block = content.optJSONObject(i) ?: continue
+                    if (block.optString("type") == "text") {
+                        val text = block.optString("text", "")
+                        if (text.isNotEmpty()) textBuffer.append(text)
+                    }
+                }
+            }
+            "result" -> {
+                val sid = json.optString("session_id", "")
+                if (sid.isNotEmpty()) sessionId = sid
+                val usage = json.optJSONObject("usage")
+                if (usage != null) {
+                    val inT = usage.optLong("input_tokens", 0)
+                    val outT = usage.optLong("output_tokens", 0)
+                    val cost = json.optDouble("total_cost_usd", -1.0)
+                    if (inT > 0 || outT > 0) {
+                        val cfg = ConfigManager.getInstance(context)
+                        val p = cfg.getActiveProvider()
+                        val s = cfg.getActiveModelSlot()
+                        val finalCost = if (cost >= 0) cost else (inT / 1e6 * (s?.pricePer1mInput ?: 0.0) + outT / 1e6 * (s?.pricePer1mOutput ?: 0.0))
+                        cfg.addUsageTokens(p?.id ?: "", s?.model ?: "", inT, outT, finalCost)
+                    }
+                }
+                if (!json.optBoolean("is_error", false)) {
+                    callback.onEvent(StreamEvent.Done(json.optString("stop_reason", "end_turn")))
+                }
+            }
+        }
     }
 
-    // 构建提示词文本
-    // 如果设置了 systemPrompt，以 "System: ..." 作为前缀
+    fun abort() { aborted = true; process?.destroy() }
+
     private fun buildPrompt(userContent: String, systemPrompt: String?): String {
-        return if (systemPrompt != null && systemPrompt.isNotEmpty()) {
-            "System: $systemPrompt\n\n$userContent"
-        } else {
-            userContent
-        }
-    }
-
-    // 构建 CLI 命令
-    // 如果 sessionId 已设置，使用 --resume 恢复会话
-    private fun buildCommand(prompt: String): String {
-        val escapedPrompt = escapeSingleQuotes(prompt)
-        val claudeCmd = if (sessionId != null) {
-            "claude --resume $sessionId -p '$escapedPrompt'"
-        } else {
-            "claude -p '$escapedPrompt'"
-        }
-        // 先 cd 到 home 目录确保 claude 配置文件可访问
-        return "cd ~ && $claudeCmd"
-    }
-
-    // 转义单引号用于 bash 安全
-    // 在 bash 中，单引号字符串内的单引号无法直接转义
-    // 使用 '"'"' 模式：结束单引号 + 转义单引号 + 重新开始单引号
-    private fun escapeSingleQuotes(s: String): String {
-        return s.replace("'", "'\\''")
-    }
-
-    // 从输出中解析并存储会话 ID
-    // Claude CLI 在输出中可能包含会话标识符
-    // 解析成功后存储到 sessionId，供后续 --resume 使用
-    private fun parseAndStoreSessionId(output: String) {
-        val sessionRegex = Regex("""[Ss]ession[:\-]?\s*([a-zA-Z0-9_\-]{8,64})""")
-        val match = sessionRegex.find(output)
-        if (match != null) {
-            sessionId = match.groupValues[1]
-            Log.d(TAG, "检测到会话 ID: $sessionId")
-        }
-        // 不匹配时不重置 sessionId（保留现有值，以支持 --resume 场景）
+        val sp = systemPrompt?.trim() ?: ""
+        return if (sp.isNotEmpty()) "System: $sp\n\n$userContent" else userContent
     }
 }

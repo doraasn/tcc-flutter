@@ -54,12 +54,12 @@ class BackupManager(private val context: Context) {
         Thread {
             try {
                 // Create backup directory on server
-                client.mkdir("MCC")
+                client.mkdir("TCC")
 
                 // Collect all conversation data
                 val data = collectAllData()
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val filename = "MCC/backup_$timestamp.json"
+                val filename = "TCC/backup_$timestamp.json"
                 val result = client.upload(filename, data.toByteArray(Charsets.UTF_8))
                 callback(result.ok, if (result.ok) "备份成功: $filename" else result.message)
             } catch (e: Exception) {
@@ -78,7 +78,7 @@ class BackupManager(private val context: Context) {
         Thread {
             try {
                 // List backups
-                val listResult = client.list("MCC")
+                val listResult = client.list("TCC")
                 if (!listResult.ok) {
                     callback(false, "无法获取备份列表: ${listResult.message}")
                     return@Thread
@@ -96,7 +96,7 @@ class BackupManager(private val context: Context) {
 
                 // Download the latest backup
                 val latest = backupFiles.last()
-                val downloadResult = client.download("MCC/$latest")
+                val downloadResult = client.download("TCC/$latest")
                 if (!downloadResult.ok || downloadResult.data == null) {
                     callback(false, "下载备份失败: ${downloadResult.message}")
                     return@Thread
@@ -135,10 +135,10 @@ class BackupManager(private val context: Context) {
         val data = JSONObject().apply {
             put("version", 1)
             put("timestamp", System.currentTimeMillis())
-            put("app", "MCC")
+            put("app", "TCC")
 
             // Export config (without API key for security)
-            val safeConfig = config.getAll()
+            val safeConfig = config.getExportData()
             safeConfig.remove("api_key")
             put("config", safeConfig)
 
@@ -174,7 +174,7 @@ class BackupManager(private val context: Context) {
         // Restore config (non-sensitive)
         if (data.has("config")) {
             val config = ConfigManager.getInstance(context)
-            config.updateFromJson(data.getJSONObject("config"))
+            config.importFromJson(data.getJSONObject("config"))
         }
     }
 }

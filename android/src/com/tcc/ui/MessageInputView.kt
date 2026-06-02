@@ -24,7 +24,7 @@ class MessageInputView(context: Context) : FrameLayout(context) {
 
     companion object {
         private const val SURFACE = 0xFF141416.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
         private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
         private const val BORDER = 0xFF2A2A2E.toInt()

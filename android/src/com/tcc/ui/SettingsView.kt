@@ -1,5 +1,4 @@
 package com.tcc.ui
-import android.view.ViewGroup.LayoutParams
 
 import android.content.Context
 import android.graphics.Typeface
@@ -8,916 +7,493 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.EditText
-import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
-import android.widget.Spinner
 import android.widget.TextView
 import com.tcc.data.ConfigManager
+import com.tcc.data.PromptManager
+import com.tcc.data.PromptTemplate
+import com.tcc.data.SkillManager
+import com.tcc.model.Provider
 
-// 设置视图
-class SettingsView(context: Context) : FrameLayout(context) {
+// 设置视图 - 多级菜单
+class SettingsView(context: Context) : LinearLayout(context) {
+
+    private val config = ConfigManager.getInstance(context)
+    private val promptMgr = PromptManager(context)
+    private val skillMgr = SkillManager(context)
 
     companion object {
         private const val BG = 0xFF0A0A0B.toInt()
         private const val SURFACE = 0xFF141416.toInt()
-        private const val SURFACE_ELEVATED = 0xFF1C1C1F.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
-        private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
-        private const val TEXT_SECONDARY = 0xFF8B8B93.toInt()
-        private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
-        private const val BORDER = 0xFF2A2A2E.toInt()
-        private const val SUCCESS = 0xFF00C853.toInt()
-        private const val ERROR = 0xFFFF5252.toInt()
+        private const val ELEVATED = 0xFF1C1C1F.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
+        private const val TXT_PRI = 0xFFFFFFFF.toInt()
+        private const val TXT_SEC = 0xFF8B8B93.toInt()
+        private const val TXT_TERTIARY = 0xFF5E5E66.toInt()
     }
 
     var onClose: (() -> Unit)? = null
-
-    private var apiKeyInput: EditText? = null
-    private var baseUrlInput: EditText? = null
-    private var modelSpinner: Spinner? = null
-    private var systemPromptInput: EditText? = null
-    private var fontSizeSeekBar: SeekBar? = null
-    private var fontSizeLabel: TextView? = null
-    private var apiKeyVisible = false
-    private var toastView: TextView? = null
-    private var templateSpinner: Spinner? = null
-
-    private val modelOptions = listOf(
-        "默认 (Claude CLI 配置)",
-        "claude-sonnet-4-20250514",
-        "claude-opus-4-20250514"
-    )
+    private val rootStack = mutableListOf<View>()  // 导航栈
 
     init {
+        orientation = VERTICAL
         setBackgroundColor(BG)
-        val rootLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-        }
-
-        // Top bar
-        val topBar = createTopBar()
-        rootLayout.addView(topBar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(56)))
-
-        // Scrollable content
-        val scrollView = ScrollView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            isVerticalScrollBarEnabled = true
-        }
-
-        val contentLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(8), dp(16), dp(32))
-        }
-
-        // Model Config Section
-        contentLayout.addView(createSectionTitle("模型配置"))
-        contentLayout.addView(createModelConfigSection())
-
-        // System Prompt Section
-        contentLayout.addView(createSectionTitle("系统提示词"))
-        contentLayout.addView(createSystemPromptSection())
-
-        // Appearance Section
-        contentLayout.addView(createSectionTitle("外观"))
-        contentLayout.addView(createAppearanceSection())
-
-        // WebDAV Backup Section
-        contentLayout.addView(createSectionTitle("WebDAV 备份"))
-        contentLayout.addView(createWebDavSection())
-
-        contentLayout.addView(createConfigButtons())
-
-        scrollView.addView(contentLayout)
-        rootLayout.addView(scrollView)
-
-        addView(rootLayout)
+        showMainMenu()
     }
 
-    // 创建顶部栏
-    private fun createTopBar(): LinearLayout {
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(0), dp(16), dp(0))
-            setBackgroundColor(SURFACE)
+    private fun showMainMenu() {
+        removeAllViews(); rootStack.clear()
+        addView(topBar("设置"))
+        val scroll = ScrollView(context).apply { layoutParams = LayoutParams(-1, -1) }
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
 
-            val titleText = TextView(context).apply {
-                text = "设置"
-                setTextColor(TEXT_PRIMARY)
-                textSize = 18f
-                typeface = Typeface.DEFAULT_BOLD
-                layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-            }
-            addView(titleText)
+        content.addView(menuCard("供应商与模型") { showProviders() })
+        content.addView(menuCard("提示词") { showPrompts() })
+        content.addView(menuCard("Skills") { showSkills() })
+        content.addView(menuCard("外观") { showAppearance() })
+        content.addView(menuCard("WebDAV 备份") { showWebDav() })
+        content.addView(menuCard("调试日志") { showDebugLog() })
 
-            val saveBtn = TextView(context).apply {
-                text = "保存"
-                setTextColor(ACCENT)
-                textSize = 15f
-                gravity = Gravity.CENTER
-                setPadding(dp(12), dp(8), dp(12), dp(8))
-                layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                    rightMargin = dp(16)
-                }
-                setOnClickListener {
-                    saveConfig()
-                }
+        // 使用统计
+        val stats = config.getUsageStats()
+        if (stats.isNotEmpty()) {
+            content.addView(sectionTitle("使用统计"))
+            for (s in stats) {
+                content.addView(textLine("${s.providerId.take(8)} / ${s.modelName}: \$${"%.4f".format(s.totalCostUsd)} (${s.totalInputTokens + s.totalOutputTokens} tokens)"))
             }
-            addView(saveBtn)
+        }
+        scroll.addView(content); addView(scroll)
+    }
 
-            val closeBtn = TextView(context).apply {
-                text = "✕"
-                setTextColor(TEXT_SECONDARY)
-                textSize = 20f
-                gravity = Gravity.CENTER
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
-                setOnClickListener {
-                    onClose?.invoke()
-                }
-            }
-            addView(closeBtn)
+    private fun pushPage(title: String, page: View) {
+        rootStack.add(getChildAt(childCount - 1))  // save current content
+        removeViews(1, childCount - 1)  // keep topbar
+        addView(page, LayoutParams(-1, -1))
+        // Update topbar title
+        (getChildAt(0) as? ViewGroup)?.let { tb ->
+            val titleView = tb.findViewWithTag<TextView>("settings_title")
+            titleView?.text = title
+            val backBtn = tb.findViewWithTag<View>("settings_back")
+            backBtn?.visibility = VISIBLE
         }
     }
 
-    // 创建分区标题
-    private fun createSectionTitle(title: String): TextView {
-        return TextView(context).apply {
-            text = title.uppercase()
-            setTextColor(TEXT_SECONDARY)
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(16)
-                bottomMargin = dp(8)
-                leftMargin = dp(4)
-            }
+    private fun popPage() {
+        if (rootStack.isEmpty()) { onClose?.invoke(); return }
+        removeViews(1, childCount - 1)
+        addView(rootStack.removeAt(rootStack.size - 1), LayoutParams(-1, -1))
+        (getChildAt(0) as? ViewGroup)?.let { tb ->
+            val titleView = tb.findViewWithTag<TextView>("settings_title")
+            titleView?.text = "设置"
+            val backBtn = tb.findViewWithTag<View>("settings_back")
+            backBtn?.visibility = if (rootStack.isEmpty()) GONE else VISIBLE
         }
     }
 
-    // 创建模型配置区域
-    private fun createModelConfigSection(): View {
-        val section = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(SURFACE)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            setBackgroundDrawable(createRoundedDrawable(SURFACE, dp(12)))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(12)
-            }
+    private fun topBar(title: String): LinearLayout = LinearLayout(context).apply {
+        orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        setBackgroundColor(SURFACE); setPadding(dp(16), dp(0), dp(16), dp(0))
+        layoutParams = LayoutParams(-1, dp(56))
+
+        val backBtn = TextView(context).apply {
+            text = "←"; setTextColor(ACCENT); textSize = 20f; visibility = GONE
+            tag = "settings_back"
+            setOnClickListener { popPage() }
+            layoutParams = LayoutParams(dp(40), -1); gravity = Gravity.CENTER
         }
+        addView(backBtn)
 
-        // API Key
-        val apiKeyLabel = createFieldLabel("Anthropic API Key")
-        section.addView(apiKeyLabel)
-
-        val apiKeyRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(16)
-            }
-        }
-
-        apiKeyInput = EditText(context).apply {
-            hint = "sk-ant-..."
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            typeface = Typeface.MONOSPACE
-            setBackgroundColor(SURFACE_ELEVATED)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-        }
-        apiKeyRow.addView(apiKeyInput!!)
-
-        val toggleEye = TextView(context).apply {
-            text = "👁"
-            textSize = 18f
-            gravity = Gravity.CENTER
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
-            setOnClickListener {
-                apiKeyVisible = !apiKeyVisible
-                apiKeyInput?.inputType = if (apiKeyVisible) {
-                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                } else {
-                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                }
-                apiKeyInput?.setSelection(apiKeyInput?.text?.length ?: 0)
-            }
-        }
-        apiKeyRow.addView(toggleEye)
-        section.addView(apiKeyRow)
-
-        // Base URL (hidden for CLI mode)
-        val baseUrlLabel = createFieldLabel("Base URL").apply { visibility = GONE }
-        section.addView(baseUrlLabel)
-
-        baseUrlInput = EditText(context).apply {
-            visibility = GONE
-            hint = "https://api.anthropic.com"
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            inputType = InputType.TYPE_CLASS_TEXT
-            typeface = Typeface.MONOSPACE
-            setBackgroundColor(SURFACE_ELEVATED)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(16)
-            }
-        }
-        section.addView(baseUrlInput)
-
-        // Model
-        val modelLabel = createFieldLabel("Model")
-        section.addView(modelLabel)
-
-        modelSpinner = Spinner(context).apply {
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(4)
-            }
-            adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, modelOptions) {
-                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                    val view = super.getView(position, convertView, parent) as TextView
-                    view.setTextColor(TEXT_PRIMARY)
-                    view.textSize = 14f
-                    view.setPadding(dp(12), dp(12), dp(12), dp(12))
-                    view.setBackgroundColor(SURFACE_ELEVATED)
-                    return view
-                }
-
-                override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                    val view = super.getDropDownView(position, convertView, parent)
-                    if (view is TextView) {
-                        view.setTextColor(TEXT_PRIMARY)
-                        view.textSize = 14f
-                        view.setPadding(dp(12), dp(12), dp(12), dp(12))
-                        view.setBackgroundColor(SURFACE_ELEVATED)
-                    }
-                    view?.setBackgroundColor(if (position % 2 == 0) SURFACE else SURFACE_ELEVATED)
-                    return view
-                }
-            }
-            setBackgroundColor(SURFACE_ELEVATED)
-        }
-        section.addView(modelSpinner)
-
-        return section
-    }
-
-    // 创建系统提示词区域
-    private fun createSystemPromptSection(): View {
-        val section = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(SURFACE)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            setBackgroundDrawable(createRoundedDrawable(SURFACE, dp(12)))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(12)
-            }
-        }
-
-        systemPromptInput = EditText(context).apply {
-            hint = "输入系统提示词…"
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            gravity = Gravity.START or Gravity.TOP
-            minHeight = dp(100)
-            setBackgroundColor(SURFACE_ELEVATED)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-        }
-        section.addView(systemPromptInput)
-
-        // Template save row
-        val templateRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(12)
-            }
-        }
-
-        val templateInput = EditText(context).apply {
-            hint = "模板名称"
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            setBackgroundColor(SURFACE_ELEVATED)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(8)
-            }
-        }
-        templateRow.addView(templateInput)
-
-        val saveTemplateBtn = Button(context).apply {
-            text = "保存模板"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(ACCENT, dp(8)))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                val name = templateInput.text.toString().trim()
-                val prompt = systemPromptInput?.text?.toString()?.trim()
-                if (name.isNotEmpty() && prompt != null && prompt.isNotEmpty()) {
-                    ConfigManager.getInstance(context).savePromptTemplate(name, prompt)
-                    showToast("模板「$name」已保存")
-                    templateInput.setText("")
-                    refreshTemplateSpinner()
-                } else {
-                    showToast("请输入模板名称和提示词")
-                }
-            }
-        }
-        templateRow.addView(saveTemplateBtn)
-        section.addView(templateRow)
-
-        // Template load row
-        val loadRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(8)
-            }
-        }
-
-        val loadLabel = TextView(context).apply {
-            text = "加载模板"
-            setTextColor(TEXT_SECONDARY)
-            textSize = 13f
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                rightMargin = dp(8)
-            }
-        }
-        loadRow.addView(loadLabel)
-
-        templateSpinner = Spinner(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(8)
-            }
-            setBackgroundColor(SURFACE_ELEVATED)
-        }
-        refreshTemplateSpinner()
-        loadRow.addView(templateSpinner!!)
-
-        val loadBtn = Button(context).apply {
-            text = "加载"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(0xFF2A2A2E.toInt(), dp(8)))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                val tmpl = templateSpinner?.selectedItem as? String
-                if (tmpl != null && tmpl.isNotEmpty()) {
-                    val templates = ConfigManager.getInstance(context).getPromptTemplates()
-                    val found = templates.find { it.first == tmpl }
-                    if (found != null) {
-                        systemPromptInput?.setText(found.second)
-                        showToast("模板「$tmpl」已加载")
-                    }
-                }
-            }
-        }
-        loadRow.addView(loadBtn)
-
-        val deleteBtn = Button(context).apply {
-            text = "删除"
-            setTextColor(0xFFFF5252.toInt())
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(0xFF2A2A2E.toInt(), dp(8)))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                leftMargin = dp(4)
-            }
-            setOnClickListener {
-                val tmpl = templateSpinner?.selectedItem as? String
-                if (tmpl != null && tmpl.isNotEmpty()) {
-                    ConfigManager.getInstance(context).deletePromptTemplate(tmpl)
-                    showToast("模板「$tmpl」已删除")
-                    refreshTemplateSpinner()
-                }
-            }
-        }
-        loadRow.addView(deleteBtn)
-        section.addView(loadRow)
-
-        return section
-    }
-
-    // 创建外观设置区域
-    private fun createAppearanceSection(): View {
-        val section = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(SURFACE)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            setBackgroundDrawable(createRoundedDrawable(SURFACE, dp(12)))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(12)
-            }
-        }
-
-        val fontSizeRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-        }
-
-        val fontSizeTitle = TextView(context).apply {
-            text = "字体大小"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 15f
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                rightMargin = dp(16)
-            }
-        }
-        fontSizeRow.addView(fontSizeTitle)
-
-        fontSizeSeekBar = SeekBar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-            max = 8  // 12 to 20
-            progress = 2 // default 14
-        }
-        fontSizeRow.addView(fontSizeSeekBar)
-
-        fontSizeLabel = TextView(context).apply {
-            text = "14"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 15f
-            minWidth = dp(32)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                leftMargin = dp(8)
-            }
-        }
-        fontSizeRow.addView(fontSizeLabel)
-
-        section.addView(fontSizeRow)
-
-        fontSizeSeekBar?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val size = 12 + progress
-                fontSizeLabel?.text = size.toString()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        addView(TextView(context).apply {
+            text = title; setTextColor(TXT_PRI); textSize = 18f; typeface = Typeface.DEFAULT_BOLD
+            tag = "settings_title"
+            layoutParams = LayoutParams(0, -2, 1f)
         })
 
-        return section
-    }
-
-    private var webdavUrlInput: EditText? = null
-    private var webdavUserInput: EditText? = null
-    private var webdavPassInput: EditText? = null
-    private var webdavVisible = false
-    private var statusText: TextView? = null
-
-    // 创建 WebDAV 备份区域
-    private fun createWebDavSection(): View {
-        val section = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(SURFACE)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            setBackgroundDrawable(createRoundedDrawable(SURFACE, dp(12)))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(12)
-            }
-        }
-
-        section.addView(TextView(context).apply {
-            text = "支持坚果云等 WebDAV 服务，备份对话记录"
-            setTextColor(TEXT_TERTIARY)
-            textSize = 12f
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(12)
-            }
+        addView(TextView(context).apply {
+            text = "✕"; setTextColor(TXT_SEC); textSize = 20f; gravity = Gravity.CENTER
+            setPadding(dp(8), dp(8), dp(8), dp(8)); layoutParams = LayoutParams(dp(40), dp(40))
+            setOnClickListener { onClose?.invoke() }
         })
+    }
 
-        // Server URL
-        section.addView(createFieldLabel("服务器地址"))
-        webdavUrlInput = EditText(context).apply {
-            setHint("https://dav.jianguoyun.com/dav/")
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            setBackgroundDrawable(createRoundedDrawable(SURFACE_ELEVATED, dp(8)))
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(8)
-            }
-        }
-        section.addView(webdavUrlInput)
+    // ---- Menu Cards ----
+    private fun menuCard(title: String, onClick: () -> Unit): View = cardLayout {
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setOnClickListener { onClick() }
+        addView(TextView(context).apply {
+            text = title; setTextColor(TXT_PRI); textSize = 16f
+            layoutParams = LayoutParams(0, -2, 1f)
+        })
+        addView(TextView(context).apply {
+            text = "›"; setTextColor(TXT_TERTIARY); textSize = 24f
+        })
+    }
 
-        // Username
-        section.addView(createFieldLabel("用户名"))
-        webdavUserInput = EditText(context).apply {
-            setHint("坚果云邮箱")
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            setBackgroundDrawable(createRoundedDrawable(SURFACE_ELEVATED, dp(8)))
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(8)
-            }
-        }
-        section.addView(webdavUserInput)
-
-        // Password
-        section.addView(createFieldLabel("密码"))
-        val passRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(12)
-            }
-        }
-        webdavPassInput = EditText(context).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setHint("坚果云应用密码")
-            setHintTextColor(TEXT_TERTIARY)
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            setBackgroundDrawable(createRoundedDrawable(SURFACE_ELEVATED, dp(8)))
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-        }
-        passRow.addView(webdavPassInput)
-
-        val toggleBtn = TextView(context).apply {
-            text = "👁"
-            textSize = 18f
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            setOnClickListener {
-                webdavVisible = !webdavVisible
-                webdavPassInput?.inputType = if (webdavVisible) {
-                    InputType.TYPE_CLASS_TEXT
-                } else {
-                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+    // ---- Providers ----
+    private fun showProviders() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+        val activeId = config.getActiveProvider()?.id
+        for (p in config.getProviders()) {
+            val isActive = p.id == activeId
+            val slot = p.models[config.getActiveModelKey()]
+            content.addView(cardLayout {
+                setOnClickListener { editProvider(p.id) }
+                addView(TextView(context).apply {
+                    text = if (isActive) "● ${p.name}" else "○ ${p.name}"
+                    setTextColor(if (isActive) ACCENT else TXT_PRI); textSize = 16f; typeface = Typeface.DEFAULT_BOLD
+                })
+                addView(TextView(context).apply {
+                    text = "活跃模型: ${slot?.displayName ?: "未设置"}"; setTextColor(TXT_SEC); textSize = 13f
+                })
+                if (!isActive) {
+                    addView(button("设为活跃") {
+                        config.switchProvider(p.id)
+                        showToast("已切换到 ${p.name}")
+                        showProviders()
+                    })
                 }
-            }
+            })
         }
-        passRow.addView(toggleBtn)
-        section.addView(passRow)
-
-        // Action buttons
-        val btnRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-        }
-
-        val testBtn = Button(context).apply {
-            text = "测试连接"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(0xFF2A2A2E.toInt(), dp(8)))
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                rightMargin = dp(4)
-                weight = 1f
-            }
-            setOnClickListener {
-                saveConfig()
-                testWebDavConnection()
-            }
-        }
-        btnRow.addView(testBtn)
-
-        val exportBtn = Button(context).apply {
-            text = "导出"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(0xFF2A2A2E.toInt(), dp(8)))
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                leftMargin = dp(4)
-                rightMargin = dp(4)
-                weight = 1f
-            }
-            setOnClickListener {
-                saveConfig()
-                exportLocal()
-            }
-        }
-        btnRow.addView(exportBtn)
-
-        val backupBtn = Button(context).apply {
-            text = "备份"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(ACCENT, dp(8)))
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                leftMargin = dp(4)
-                rightMargin = dp(4)
-                weight = 1f
-            }
-            setOnClickListener {
-                saveConfig()
-                backupToWebDav()
-            }
-        }
-        btnRow.addView(backupBtn)
-
-        val restoreBtn = Button(context).apply {
-            text = "恢复"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 13f
-            setBackgroundDrawable(createRoundedDrawable(0xFF2A2A2E.toInt(), dp(8)))
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                leftMargin = dp(8)
-                weight = 1f
-            }
-            setOnClickListener {
-                saveConfig()
-                restoreFromWebDav()
-            }
-        }
-        btnRow.addView(restoreBtn)
-
-        section.addView(btnRow)
-
-        statusText = TextView(context).apply {
-            text = ""
-            setTextColor(TEXT_TERTIARY)
-            textSize = 12f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(8)
-            }
-        }
-        section.addView(statusText)
-
-        return section
+        content.addView(buttonBar {
+            addView(button("+ 添加供应商") { addProvider() })
+            addView(button("+ 添加预设") { addPreset() })
+        })
+        pushPage("供应商与模型", ScrollView(context).apply { addView(content) })
     }
 
-    // 测试 WebDAV 连接
-    private fun testWebDavConnection() {
-        statusText?.text = "测试中…"
-        val backupMgr = com.tcc.data.BackupManager(context)
-        backupMgr.testConnection { ok, msg ->
-            android.os.Handler(context.mainLooper).post {
-                statusText?.text = msg
-                statusText?.setTextColor(if (ok) 0xFF00C853.toInt() else 0xFFFF5252.toInt())
-            }
-        }
-    }
+    private fun editProvider(id: String) {
+        val p = config.getProviders().find { it.id == id } ?: return
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
 
-    // 备份到 WebDAV
-    private fun backupToWebDav() {
-        statusText?.text = "备份中…"
-        val backupMgr = com.tcc.data.BackupManager(context)
-        backupMgr.backupToWebDav { ok, msg ->
-            android.os.Handler(context.mainLooper).post {
-                statusText?.text = msg
-                statusText?.setTextColor(if (ok) 0xFF00C853.toInt() else 0xFFFF5252.toInt())
-                if (ok) showToast("备份成功")
-            }
-        }
-    }
+        content.addView(fieldLabel("名称"))
+        val nameInput = editText(p.name)
+        content.addView(nameInput)
 
-    // 从 WebDAV 恢复
-    private fun restoreFromWebDav() {
-        statusText?.text = "恢复中…"
-        val backupMgr = com.tcc.data.BackupManager(context)
-        backupMgr.restoreFromWebDav { ok, msg ->
-            android.os.Handler(context.mainLooper).post {
-                statusText?.text = msg
-                statusText?.setTextColor(if (ok) 0xFF00C853.toInt() else 0xFFFF5252.toInt())
-                if (ok) showToast("恢复成功，请重启应用")
-            }
-        }
-    }
+        content.addView(sectionDivider())
 
-    // 导出到本地
-    private fun exportLocal() {
-        statusText?.text = "导出中…"
-        val backupMgr = com.tcc.data.BackupManager(context)
-        backupMgr.exportToLocal { ok, msg ->
-            android.os.Handler(context.mainLooper).post {
-                statusText?.text = msg
-                statusText?.setTextColor(if (ok) 0xFF00C853.toInt() else 0xFFFF5252.toInt())
+        // 环境变量编辑
+        content.addView(sectionTitle("环境变量"))
+        val envViews = mutableMapOf<String, android.widget.EditText>()
+        for ((key, value) in p.env) {
+            val label = when (key) {
+                "ANTHROPIC_BASE_URL" -> "接口地址"
+                "ANTHROPIC_AUTH_TOKEN" -> "API Key"
+                "ANTHROPIC_API_KEY" -> "API Key"
+                "ANTHROPIC_MODEL" -> "默认模型"
+                "ANTHROPIC_DEFAULT_OPUS_MODEL" -> "Opus 模型"
+                "ANTHROPIC_DEFAULT_SONNET_MODEL" -> "Sonnet 模型"
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL" -> "Haiku 模型"
+                "CLAUDE_CODE_SUBAGENT_MODEL" -> "代理模型"
+                "CLAUDE_CODE_EFFORT_LEVEL" -> "推理强度"
+                else -> key
             }
-        }
-    }
-
-    // 创建配置按钮
-    private fun createConfigButtons(): View {
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(24)
+            content.addView(fieldLabel(label))
+            val et = editText(value)
+            if (key == "ANTHROPIC_AUTH_TOKEN" || key == "ANTHROPIC_API_KEY") {
+                et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             }
+            if (key == "ANTHROPIC_BASE_URL") {
+                et.hint = "https://api.deepseek.com/anthropic"
+            }
+            envViews[key] = et
+            content.addView(et)
         }
 
-        val btn = Button(context).apply {
-            text = "保存配置"
-            setTextColor(TEXT_PRIMARY)
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setBackgroundDrawable(createRoundedDrawable(ACCENT, dp(12)))
-            setPadding(dp(32), dp(12), dp(32), dp(12))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                saveConfig()
-            }
-        }
-        container.addView(btn)
+        content.addView(sectionDivider())
 
-        return container
-    }
-
-    // 创建字段标签
-    private fun createFieldLabel(text: String): TextView {
-        return TextView(context).apply {
-            this.text = text
-            setTextColor(TEXT_SECONDARY)
-            textSize = 13f
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(6)
-                topMargin = dp(4)
-            }
-        }
-    }
-
-    // 加载配置到界面
-    fun loadConfig() {
-        val config = ConfigManager.getInstance(context)
-        apiKeyInput?.setText(config.getApiKey())
-
-        val model = config.getModel()
-        val modelIndex = modelOptions.indexOfFirst { it.equals(model, ignoreCase = true) }
-        if (modelIndex >= 0) {
-            modelSpinner?.setSelection(modelIndex)
-        } else {
-            // Add custom model to list
-            val allModels = modelOptions.toMutableList()
-            if (model.isNotEmpty() && !allModels.contains(model)) {
-                allModels.add(0, model)
-                modelSpinner?.adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, allModels) {
-                    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                        val view = super.getView(position, convertView, parent) as TextView
-                        view.setTextColor(TEXT_PRIMARY)
-                        view.textSize = 14f
-                        view.setPadding(dp(12), dp(12), dp(12), dp(12))
-                        view.setBackgroundColor(SURFACE_ELEVATED)
-                        return view
-                    }
-
-                    override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                        val view = super.getDropDownView(position, convertView, parent)
-                        if (view is TextView) {
-                            view.setTextColor(TEXT_PRIMARY)
-                            view.textSize = 14f
-                            view.setPadding(dp(12), dp(12), dp(12), dp(12))
-                            view.setBackgroundColor(SURFACE_ELEVATED)
-                        }
-                        view?.setBackgroundColor(if (position % 2 == 0) SURFACE else SURFACE_ELEVATED)
-                        return view
-                    }
-                }
-                modelSpinner?.setSelection(0)
-            }
+        // 显示当前状态
+        val isActive = config.getActiveProvider()?.id == id
+        if (isActive) {
+            content.addView(textLine("● 当前活跃供应商"))
         }
 
-        systemPromptInput?.setText(config.getSystemPrompt())
-
-        val fontSize = config.getFontSize()
-        val progress = (fontSize - 12).coerceIn(0, 8)
-        fontSizeSeekBar?.progress = progress
-        fontSizeLabel?.text = fontSize.toString()
-
-        webdavUrlInput?.setText(config.getWebDavUrl())
-        webdavUserInput?.setText(config.getWebDavUser())
-        webdavPassInput?.setText(config.getWebDavPass())
-    }
-
-    // 保存配置
-    fun saveConfig() {
-        try {
-            val config = ConfigManager.getInstance(context)
-            val apiKey = apiKeyInput?.text?.toString()?.trim() ?: ""
-            val model = if (modelSpinner?.selectedItem != null) {
-                modelSpinner?.selectedItem.toString()
-            } else {
-                ""
-            }
-            val systemPrompt = systemPromptInput?.text?.toString()?.trim() ?: ""
-            val fontSize = (fontSizeSeekBar?.progress ?: 2) + 12
-            val webdavUrl = webdavUrlInput?.text?.toString()?.trim() ?: ""
-            val webdavUser = webdavUserInput?.text?.toString()?.trim() ?: ""
-            val webdavPass = webdavPassInput?.text?.toString()?.trim() ?: ""
-
-            config.setApiKey(apiKey)
-            config.setModel(model)
-            config.setSystemPrompt(systemPrompt)
-            config.setFontSize(fontSize)
-            config.setWebDavUrl(webdavUrl)
-            config.setWebDavUser(webdavUser)
-            config.setWebDavPass(webdavPass)
-
-            showToast("配置已保存")
-        } catch (e: Exception) {
-            showToast("保存失败: ${e.message}")
-        }
-    }
-
-    // 显示 Toast 提示
-    private fun showToast(message: String) {
-        toastView?.let { removeView(it) }
-
-        toastView = TextView(context).apply {
-            text = message
-            setTextColor(TEXT_PRIMARY)
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setBackgroundDrawable(createRoundedDrawable(0xCC141416.toInt(), dp(8)))
-            setPadding(dp(24), dp(12), dp(24), dp(12))
-            elevation = 8f
-            layoutParams = FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
-                bottomMargin = dp(32)
-            }
-            postDelayed({
-                if (toastView != null && toastView?.parent != null) {
-                    removeView(toastView)
-                    toastView = null
-                }
-            }, 2500)
-        }
-        addView(toastView)
-    }
-
-    private fun createRoundedDrawable(color: Int, radius: Int): android.graphics.drawable.Drawable {
-        return object : android.graphics.drawable.Drawable() {
-            private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                this.color = color
-                style = android.graphics.Paint.Style.FILL
-            }
-
-            override fun draw(canvas: android.graphics.Canvas) {
-                val r = radius.toFloat()
-                canvas.drawRoundRect(
-                    bounds.left.toFloat(), bounds.top.toFloat(),
-                    bounds.right.toFloat(), bounds.bottom.toFloat(),
-                    r, r, paint
+        content.addView(buttonBar {
+            addView(button("保存") {
+                val updated = p.copy(
+                    name = nameInput.text.toString(),
+                    env = envViews.entries.associate { it.key to it.value.text.toString() }.toMutableMap()
                 )
+                config.saveProvider(updated)
+                if (!isActive) config.switchProvider(updated.id)
+                showToast("已保存")
+                popPage(); showProviders()
+            })
+            if (!isActive) {
+                addView(button("设为活跃") {
+                    config.switchProvider(id)
+                    showToast("已切换到 ${p.name}")
+                    popPage(); showProviders()
+                })
             }
-
-            override fun setAlpha(alpha: Int) { paint.alpha = alpha }
-            override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
-            override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
-        }
+            addView(button("删除", 0xFFFF5252.toInt()) {
+                config.deleteProvider(id)
+                showToast("已删除"); popPage(); showProviders()
+            })
+        })
+        pushPage(p.name, ScrollView(context).apply { addView(content) })
     }
 
-    // 刷新模板下拉框
-    private fun refreshTemplateSpinner() {
-        val templates = ConfigManager.getInstance(context).getPromptTemplates()
-        val names = templates.map { it.first }
-        val displayNames = if (names.isEmpty()) listOf("(无模板)") else names
-        templateSpinner?.adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, displayNames) {
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = super.getView(position, convertView, parent) as TextView
-                view.setTextColor(TEXT_PRIMARY)
-                view.textSize = 13f
-                view.setPadding(dp(8), dp(8), dp(8), dp(8))
-                view.setBackgroundColor(SURFACE_ELEVATED)
-                return view
-            }
+    private fun addProvider() {
+        val p = Provider(name = "新供应商")
+        config.saveProvider(p)
+        editProvider(p.id)
+    }
 
-            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = super.getDropDownView(position, convertView, parent)
-                if (view is TextView) {
-                    view.setTextColor(TEXT_PRIMARY)
-                    view.textSize = 13f
-                    view.setPadding(dp(8), dp(8), dp(8), dp(8))
+    private fun addPreset() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+        for (preset in listOf(Provider.mimoPreset(), Provider.deepSeekPreset(), Provider.anthropicPreset())) {
+            content.addView(cardLayout {
+                setOnClickListener {
+                    config.saveProvider(preset)
+                    config.switchProvider(preset.id)
+                    showToast("已添加 ${preset.name}")
+                    popPage(); showProviders()
                 }
-                return view
+                addView(TextView(context).apply {
+                    text = preset.name; setTextColor(TXT_PRI); textSize = 16f; typeface = Typeface.DEFAULT_BOLD
+                })
+                val slot = preset.models["ANTHROPIC_MODEL"]
+                addView(TextView(context).apply {
+                    text = "模型: ${slot?.model ?: ""}"; setTextColor(TXT_SEC); textSize = 13f
+                })
+            })
+        }
+        pushPage("选择预设", ScrollView(context).apply { addView(content) })
+    }
+
+    // ---- Prompts ----
+    private fun showPrompts() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+
+        content.addView(sectionTitle("全局提示词"))
+        content.addView(textLine("当前: ${config.getSystemPrompt().take(50)}"))
+        val et = android.widget.EditText(context).apply {
+            setText(config.getSystemPrompt())
+            setTextColor(TXT_PRI); setHintTextColor(TXT_TERTIARY); textSize = 14f
+            gravity = Gravity.START or Gravity.TOP; minHeight = dp(80)
+            setBackgroundColor(ELEVATED); setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        content.addView(et)
+        content.addView(button("保存系统提示词") {
+            config.setSystemPrompt(et.text.toString())
+            showToast("已保存")
+        })
+
+        for (t in promptMgr.getGlobalTemplates()) {
+            content.addView(cardLayout {
+                setOnClickListener {
+                    config.setSystemPrompt(t.content)
+                    et.setText(t.content)
+                    showToast("已加载: ${t.name}")
+                }
+                addView(TextView(context).apply {
+                    text = t.name; setTextColor(TXT_PRI); textSize = 14f; typeface = Typeface.DEFAULT_BOLD
+                })
+            })
+        }
+
+        content.addView(sectionTitle("项目提示词"))
+        for (t in promptMgr.getProjectTemplates()) {
+            content.addView(cardLayout {
+                setOnClickListener {
+                    config.setSystemPrompt(t.content); et.setText(t.content)
+                    showToast("已加载: ${t.name}")
+                }
+                addView(TextView(context).apply {
+                    text = t.name; setTextColor(TXT_PRI); textSize = 14f
+                })
+            })
+        }
+
+        pushPage("提示词", ScrollView(context).apply { addView(content) })
+    }
+
+    // ---- Skills ----
+    private fun showSkills() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+        for (s in skillMgr.getSkills()) {
+            content.addView(cardLayout {
+                setOnClickListener {
+                    skillMgr.setSkillEnabled(s.name, !s.enabled)
+                    showSkills()
+                }
+                addView(TextView(context).apply {
+                    text = if (s.enabled) "[✓] ${s.name}" else "[ ] ${s.name}"
+                    setTextColor(if (s.enabled) TXT_PRI else TXT_TERTIARY); textSize = 15f
+                })
+            })
+        }
+        content.addView(button("管理 MCP 服务器") { showMcp() })
+        pushPage("Skills", ScrollView(context).apply { addView(content) })
+    }
+
+    private fun showMcp() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+        for (m in skillMgr.getMcpServers()) {
+            content.addView(cardLayout {
+                setOnClickListener {
+                    skillMgr.deleteMcpServer(m.name)
+                    showMcp()
+                }
+                addView(TextView(context).apply {
+                    text = "${m.name} [${m.command}]"; setTextColor(TXT_PRI); textSize = 14f
+                })
+            })
+        }
+        pushPage("MCP 服务器", ScrollView(context).apply { addView(content) })
+    }
+
+    // ---- Appearance ----
+    private fun showAppearance() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+
+        content.addView(fieldLabel("字体大小"))
+        val seekBar = android.widget.SeekBar(context).apply {
+            max = 8; progress = config.getFontSize() - 12
+            layoutParams = LayoutParams(-1, -2)
+        }
+        content.addView(seekBar)
+        content.addView(button("保存") {
+            config.setFontSize(12 + seekBar.progress)
+            showToast("已保存")
+        })
+        pushPage("外观", ScrollView(context).apply { addView(content) })
+    }
+
+    // ---- WebDAV ----
+    private fun showWebDav() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+        val urlInput = editText(config.getWebDavUrl()).apply { hint = "https://dav.jianguoyun.com/dav/" }
+        val userInput = editText(config.getWebDavUser()).apply { hint = "用户名" }
+        val passInput = editText(config.getWebDavPass()).apply { hint = "密码"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        content.addView(fieldLabel("服务器地址")); content.addView(urlInput)
+        content.addView(fieldLabel("用户名")); content.addView(userInput)
+        content.addView(fieldLabel("密码")); content.addView(passInput)
+        content.addView(button("保存") {
+            config.setWebDavUrl(urlInput.text.toString())
+            config.setWebDavUser(userInput.text.toString())
+            config.setWebDavPass(passInput.text.toString())
+            showToast("已保存")
+        })
+        pushPage("WebDAV 备份", ScrollView(context).apply { addView(content) })
+    }
+
+    // ---- Debug Log ----
+    private fun showDebugLog() {
+        val content = LinearLayout(context).apply { orientation = VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(32)) }
+
+        val logText = TextView(context).apply {
+            setTextColor(TXT_PRI); textSize = 11f; typeface = Typeface.MONOSPACE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setBackgroundColor(ELEVATED)
+            setTextIsSelectable(true)
+            layoutParams = LayoutParams(-1, -1)
+        }
+
+        val refreshBtn = button("刷新日志") {
+            val log = com.tcc.api.ClaudeCli.getLog()
+            logText.text = if (log.isEmpty()) "暂无日志" else log
+        }
+
+        val exportBtn = button("导出日志") {
+            try {
+                val src = com.tcc.api.ClaudeCli.getLogFile()
+                if (src == null || !src.exists()) {
+                    showToast("暂无日志文件")
+                    return@button
+                }
+                val dst = java.io.File("/sdcard/Download/tcc-log.txt")
+                src.copyTo(dst, overwrite = true)
+                showToast("已导出到 Download/tcc-log.txt")
+            } catch (e: Exception) {
+                showToast("导出失败: ${e.message}")
             }
+        }
+
+        content.addView(buttonBar {
+            addView(refreshBtn)
+            addView(exportBtn)
+        })
+        content.addView(logText, LayoutParams(-1, 0, 1f))
+
+        pushPage("调试日志", content)
+    }
+
+    // ---- UI Helpers ----
+    private fun sectionTitle(text: String) = TextView(context).apply {
+        this.text = text.uppercase(); setTextColor(TXT_SEC); textSize = 13f; typeface = Typeface.DEFAULT_BOLD
+        letterSpacing = 0.08f
+        layoutParams = LayoutParams(-1, -2).apply { topMargin = dp(20); bottomMargin = dp(8); leftMargin = dp(4) }
+    }
+    private fun fieldLabel(text: String) = TextView(context).apply {
+        this.text = text; setTextColor(TXT_SEC); textSize = 13f
+        layoutParams = LayoutParams(-1, -2).apply { bottomMargin = dp(4); topMargin = dp(8) }
+    }
+    private fun textLine(text: String) = TextView(context).apply {
+        this.text = text; setTextColor(TXT_SEC); textSize = 13f
+        layoutParams = LayoutParams(-1, -2).apply { bottomMargin = dp(4) }
+    }
+    private fun sectionDivider() = View(context).apply {
+        setBackgroundColor(0xFF2A2A30.toInt())
+        layoutParams = LayoutParams(-1, dp(1)).apply { topMargin = dp(4); bottomMargin = dp(12) }
+    }
+    private fun editText(text: String) = android.widget.EditText(context).apply {
+        setText(text); setTextColor(TXT_PRI); setHintTextColor(TXT_TERTIARY); textSize = 14f
+        setBackgroundDrawable(borderedDrawable(ELEVATED, 0xFF2A2A30.toInt(), dp(8), dp(1)))
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        layoutParams = LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
+    }
+    private fun cardLayout(init: LinearLayout.() -> Unit) = LinearLayout(context).apply {
+        orientation = VERTICAL; setBackgroundColor(SURFACE); setPadding(dp(16), dp(12), dp(16), dp(12))
+        setBackgroundDrawable(roundedDrawable(SURFACE, dp(12)))
+        layoutParams = LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+        init()
+    }
+    private fun buttonBar(init: LinearLayout.() -> Unit) = LinearLayout(context).apply {
+        orientation = HORIZONTAL; layoutParams = LayoutParams(-1, -2).apply { topMargin = dp(16) }
+        init()
+    }
+    private fun button(text: String, color: Int = ACCENT, onClick: () -> Unit = {}): android.widget.Button {
+        return android.widget.Button(context).apply {
+            this.text = text; setTextColor(0xFFFFFFFF.toInt()); textSize = 14f; typeface = Typeface.DEFAULT_BOLD
+            setBackgroundDrawable(roundedDrawable(color, dp(10)))
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            layoutParams = LayoutParams(-2, -2).apply { rightMargin = dp(10) }
+            setOnClickListener { onClick() }
         }
     }
 
-    private fun dp(value: Int): Int {
-        return TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            value.toFloat(),
-            resources.displayMetrics
-        ).toInt()
+    fun loadConfig() = Unit  // handled on-the-fly
+
+    private fun roundedDrawable(color: Int, radius: Int) = object : android.graphics.drawable.Drawable() {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        override fun draw(c: android.graphics.Canvas) { c.drawRoundRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat(), radius.toFloat(), radius.toFloat(), p) }
+        override fun setAlpha(a: Int) { p.alpha = a }
+        override fun setColorFilter(f: android.graphics.ColorFilter?) { p.colorFilter = f }
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
     }
+
+    private fun borderedDrawable(fillColor: Int, strokeColor: Int, radius: Int, strokeWidth: Int) = object : android.graphics.drawable.Drawable() {
+        private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color = fillColor }
+        private val stroke = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = strokeColor; this.style = android.graphics.Paint.Style.STROKE; this.strokeWidth = strokeWidth.toFloat()
+        }
+        override fun draw(c: android.graphics.Canvas) {
+            val r = radius.toFloat()
+            c.drawRoundRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat(), r, r, fill)
+            c.drawRoundRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat(), r, r, stroke)
+        }
+        override fun setAlpha(a: Int) { fill.alpha = a; stroke.alpha = a }
+        override fun setColorFilter(f: android.graphics.ColorFilter?) { fill.colorFilter = f; stroke.colorFilter = f }
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
+    private fun showToast(msg: String) {
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 }

@@ -16,7 +16,7 @@ class LarkToolsView(context: Context) : FrameLayout(context) {
         private const val BG = 0xFF0A0A0B.toInt()
         private const val SURFACE = 0xFF141416.toInt()
         private const val SURFACE_ELEVATED = 0xFF1C1C1F.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
         private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
         private const val TEXT_SECONDARY = 0xFF8B8B93.toInt()
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
@@ -85,7 +85,7 @@ class LarkToolsView(context: Context) : FrameLayout(context) {
         checkBtn.setOnClickListener {
             outputText.text = "检查中…"
             Thread {
-                val result = LarkClient.authStatus()
+                val result = LarkClient.authStatus(context)
                 post { outputText.text = result }
             }.start()
         }
@@ -111,7 +111,7 @@ class LarkToolsView(context: Context) : FrameLayout(context) {
                 setOnClickListener {
                     outputText.text = "执行中: lark-cli $cmd"
                     Thread {
-                        val result = LarkClient.execute(*cmd.split(" ").toTypedArray())
+                        val result = LarkClient.execute(context, *cmd.split(" ").toTypedArray())
                         post { outputText.text = result }
                     }.start()
                 }
@@ -144,7 +144,7 @@ class LarkToolsView(context: Context) : FrameLayout(context) {
                 if (args.isNotEmpty()) {
                     outputText.text = "执行中…"
                     Thread {
-                        val result = LarkClient.execute(*args.split(" ").toTypedArray())
+                        val result = LarkClient.execute(context, *args.split(" ").toTypedArray())
                         post { outputText.text = result }
                     }.start()
                 }
@@ -164,7 +164,7 @@ class LarkToolsView(context: Context) : FrameLayout(context) {
             minHeight = dp(200)
             gravity = Gravity.TOP or Gravity.START
             layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            text = if (LarkClient.isAvailable()) "lark-cli 可用" else "lark-cli 未安装"
+            text = if (LarkClient.isAvailable(context)) "lark-cli 可用" else "lark-cli 未安装"
         }
         content.addView(outputText)
 

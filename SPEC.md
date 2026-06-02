@@ -12,7 +12,7 @@ TCC 是运行在 Android 上的原生 AI 对话客户端。内置完整 Termux L
 
 | 功能 | 说明 |
 |------|------|
-| 对话气泡 | 用户消息右对齐（紫色），AI 回复左对齐（暗色），自适应宽度 |
+| 对话气泡 | 用户消息右对齐（橙色），AI 回复左对齐（暗色），自适应宽度 |
 | Markdown 渲染 | **加粗**、`行内代码`、代码块、列表(`- ` / `1. `)、链接(`[text](url)`) |
 | 流式显示 | 缓冲区流式输出（64字符/80ms 间隔），末尾闪烁光标，支持中途停止 |
 | 快捷指令 | 输入 `/` 触发命令面板：`/context` `/compact` `/clear` `/help` `/model` `/temperature` |
@@ -56,6 +56,7 @@ TCC 是运行在 Android 上的原生 AI 对话客户端。内置完整 Termux L
 | 模型显示 | 默认/Claude Sonnet/Claude Opus (CLI 自身管理模型) |
 | 系统提示词 | 多行编辑器 + 保存/加载模板 |
 | 字体大小 | 滑块调节 (12-20sp)，全局生效 |
+| 调试日志 | 实时日志查看 + 导出到 Download/tcc-log.txt |
 | 主题 | 暗色主题 |
 
 ### 6. WebDAV 备份
@@ -83,7 +84,7 @@ TCC APK (com.tcc, ~280MB)
 │   ├── LarkToolsView            ← 飞书 CLI
 │   └── ShellView                ← Termux 终端
 │
-├── ClaudeCli                    ← ProcessBuilder 调用 bash -c "claude -p '...'"
+├── ClaudeCli                    ← ProcessBuilder 调用 bash -c "cat prompt | claude.exe" (直连 API)
 ├── TermuxBootstrap              ← tar.gz 解压 + chmod + 环境变量
 ├── LarkClient                   ← lark-cli 进程调用
 ├── ConversationManager          ← JSON 文件存储对话
@@ -98,7 +99,7 @@ TCC APK (com.tcc, ~280MB)
 | 语言 | Kotlin |
 | UI | 纯程序化 View（无 XML 布局） |
 | 编译 | kotlinc → d8 → DEX |
-| 打包 | Python (AXML writer + zip + apksigner + 二进制 manifest 补丁) |
+| 打包 | Python (AXML writer + zip + apksigner) |
 | 存储 | JSON (Context.filesDir) + SharedPreferences |
 | AI 引擎 | Claude Code CLI (本地进程，非 HTTP API) |
 | Termux 环境 | 内置 bootstrap (bash + apt + Node.js + @anthropic-ai/claude-code) |
@@ -108,10 +109,10 @@ TCC APK (com.tcc, ~280MB)
 ### 关键文件
 | 文件 | 作用 |
 |------|------|
-| `build.py` | 编译 Kotlin → DEX → AXML 生成 → 打包 → 签名 → 二进制补丁 INTERNET 权限 |
+| `build.py` | 编译 Kotlin → DEX → AXML 生成 → 打包 → 签名 |
 | `bundle.sh` | 从本机 Termux 导出环境到 assets/termux-bundle.tar.gz |
-| `TermuxBootstrap.kt` | tar.gz 解压 (GZIP + 自写 tar 解析器) + chmod 权限修复 + 环境变量 |
-| `ClaudeCli.kt` | ProcessBuilder 启动 bash 执行 claude 命令 + 缓冲流式输出 |
+| `TermuxBootstrap.kt` | tar.gz 解压 (XZ + 自写 tar 解析器) + chmod 权限修复 + 环境变量 + patchelf |
+| `ClaudeCli.kt` | ProcessBuilder 启动 bash 执行 claude 命令 + 直连 API + 文件日志 + 缓冲流式输出 |
 | `ChatListView.kt` | 气泡渲染 + Markdown 解析 (bold/code/list/link) |
 
 ---
@@ -123,7 +124,8 @@ TCC APK (com.tcc, ~280MB)
          → MainActivity.sendMessage()
          → Conversation.messages.add(userMsg + assistantMsg)
          → ClaudeCli.streamChat()
-           → ProcessBuilder("bash", "-c", "cd ~ && claude -p '...'")
+           → ProcessBuilder("linker64", "bash", "-c", "cat prompt | claude.exe --dangerously-skip-permissions ...")
+           → 直连 API (ANTHROPIC_BASE_URL 环境变量)
            → 缓冲读取 stdout → StreamEvent.Chunk
            → ChatListView.updateLastMessage() [实时显示]
          → onDone() → parseSessionId → ConversationManager.save()
@@ -156,11 +158,8 @@ python3 android/build.py
 # 3. APK 自动签名输出到 android/dist/TCC.apk
 ```
 
-### 二进制 Manifest 补丁
-`build.py` 生成的 AXML manifest 不含 INTERNET 权限。
-必须在签名后用 Python 脚本二进制注入 `uses-permission` 标签。
-**当前代码中这个补丁未自动集成在 build.py 里**——需要单独运行。
-注意 `np+=sd` 必须写在 for 循环外，否则 manifest 膨胀 N 倍导致 `packageInfo is null`。
+### INTERNET 权限
+`build.py` 的 AXMLWriter 已在 manifest 中写入 INTERNET 和 WRITE_EXTERNAL_STORAGE 权限，无需额外补丁。
 
 ### TermuxBootstrap 关键约束
 - tar 解压需处理 type '0'(文件)、'5'(目录)、'2'(符号链接)
@@ -174,9 +173,10 @@ python3 android/build.py
 - 构造函数需要 `Context` 参数（用于 TermuxBootstrap）
 - 流式输出用缓冲模式（64 字符或 80ms），不能逐字符发 Chunk（1000 字符 = 1000 次 UI 刷新）
 - sessionId 只在检测到时更新，未检测到不要清空
-- 单引号必须 escape：`str.replace("'", "'\\''")`
 - 必须前置检查 `TermuxBootstrap.isInstalled()` 给出友好错误
-- 命令：`cd ~ && claude -p '$escaped'` 或 `--resume $sid -p '...'`
+- 直连 API，不使用代理（ANTHROPIC_BASE_URL 直接设置为真实地址）
+- 命令：`cat prompt.txt | claude.exe --dangerously-skip-permissions --output-format stream-json --verbose`
+- 日志写入 `filesDir/logs/tcc.log`，支持导出到 Download/tcc-log.txt
 
 ### MainActivity 初始化流程
 - 首次启动(未安装): 显示加载页 → `install()` → **检查返回值** → 成功才进主界面
@@ -189,7 +189,7 @@ python3 android/build.py
 BG = 0xFF0A0A0B.toInt()        // 主背景
 SURFACE = 0xFF141416.toInt()    // 卡片背景
 SURFACE_ELEVATED = 0xFF1C1C1F.toInt()  // 凸起卡片
-ACCENT = 0xFF6C5CE7.toInt()     // 主题紫
+ACCENT = 0xFFFF8C00.toInt()     // 主题橙
 TEXT_PRIMARY = 0xFFFFFFFF.toInt()
 TEXT_SECONDARY = 0xFF8B8B93.toInt()
 TEXT_TERTIARY = 0xFF5E5E66.toInt()
@@ -198,17 +198,15 @@ BORDER = 0xFF2A2A2E.toInt()
 
 ### 不用的文件和遗留问题
 - `AnthropicClient.kt` 已废弃，保留作参考（HTTP API 方式）
+- `ApiProxy.kt` 未使用，ClaudeCli 已改为直连 API（环境变量注入方式）
 - `java/com/tcc/` 下的 Java 文件是旧代码，`build.py` 不编译它们（只编译 `src/`）
 - `MCC.apk` 是旧版 APK，可删除
 - `tmp_*` 目录是 apktool 工作目录，可清理
 - `build_orig.py` 已删除，当前只用 `build.py`
 
 ### 已知未完成
-- [ ] INTERNET 权限补丁未集成进 build.py 主流程
-- [ ] Claude CLI 的 `--output-format stream-json` 未验证可用性
 - [ ] sessionId 通过 Regex 解析可能不准确（依赖 CLI 输出格式）
 - [ ] 多 DEX (classes2.dex) 不支持
-- [ ] 本地导出按钮 UI (SettingsView) 已加但未验证
 - [ ] 符号链接的回退复制未实现
 
 ---
@@ -229,7 +227,7 @@ tcc/                              ← Git 仓库根目录 (/data/data/com.termux
 │   │   └── termux-bundle.tar.gz  ← [需手动生成] Termux 完整环境包 (277MB)
 │   ├── src/com/tcc/              ← Kotlin 源码主目录 (16 个 .kt 文件)
 │   │   ├── MainActivity.kt       ← 主控制器 (init/setup/send/commands)
-│   │   ├── TermuxBootstrap.kt    ← 环境安装 (Gzip解压+tar解析+chmod)
+│   │   ├── TermuxBootstrap.kt    ← 环境安装 (XZ解压+tar解析+chmod+patchelf)
 │   │   ├── api/
 │   │   │   ├── ClaudeCli.kt      ← Claude CLI 进程调用 (关键!)
 │   │   │   ├── AnthropicClient.kt← [废弃] HTTP API 方式 (保留参考)
@@ -255,7 +253,7 @@ tcc/                              ← Git 仓库根目录 (/data/data/com.termux
 │   ├── dist/                     ← 构建输出目录 (不提交 git)
 │   │   └── TCC.apk               ← 最终 APK (构建后)
 │   └── build/                    ← 构建中间文件 (不提交 git)
-│       └── AndroidManifest.xml   ← 二进制 manifest (构建生成, 需打补丁)
+│       └── AndroidManifest.xml   ← 二进制 manifest (构建生成)
 ```
 
 ### 构建完整流程 (严格按顺序)
@@ -274,22 +272,9 @@ bash bundle.sh
 python3 build.py
 # 输出: dist/TCC.apk (~280MB, 含 DEX + 二进制 manifest + bundle)
 
-# 步骤 3: 二进制补丁 INTERNET 权限 (必须!)
-# 因为 build.py 的 AXMLWriter 不支持 uses-permission 标签
-# 需要用 Python 脚本在生成的 manifest 中注入 INTERNET 权限并重新签名
-# (见下方 "INTERNET 权限补丁" 章节)
-
-# 步骤 4: 部署到设备
+# 步骤 3: 部署到设备
 cp dist/TCC.apk /sdcard/Download/TCC.apk
 # 用户手动安装
-```
-
-### INTERNET 权限二进制补丁
-```
-build.py 生成的 AndroidManifest.xml 不含 <uses-permission android:name="android.permission.INTERNET"/>
-必须在 APK 打包后用 Python 脚本在二进制 manifest 中插入该标签并重新签名。
-具体操作见 build.py 末尾的 patch_manifest() 函数（待集成）。
-当前需要在 build.py 完成签名后，手动运行补丁脚本。
 ```
 
 ### 修改代码时的关键约束

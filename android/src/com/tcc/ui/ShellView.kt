@@ -19,7 +19,7 @@ class ShellView(context: Context) : FrameLayout(context) {
         private const val BG = 0xFF0A0A0B.toInt()
         private const val SURFACE = 0xFF141416.toInt()
         private const val SURFACE_ELEVATED = 0xFF1C1C1F.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
         private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
         private const val TEXT_SECONDARY = 0xFF8B8B93.toInt()
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
@@ -44,7 +44,7 @@ class ShellView(context: Context) : FrameLayout(context) {
     init {
         // Determine Termux availability
         val embedded = TermuxBootstrap.isInstalled(context)
-        val systemTermux = TermuxBootstrap.isAvailable()
+        val systemTermux = java.io.File("/data/data/com.termux/files/usr/bin/bash").canExecute()
         termuxUsable = embedded || systemTermux
         currentDir = when {
             embedded -> TermuxBootstrap.getHomeDir(context).absolutePath
@@ -96,7 +96,7 @@ class ShellView(context: Context) : FrameLayout(context) {
         statusText = TextView(context).apply {
             text = when {
                 TermuxBootstrap.isInstalled(context) -> "Termux 环境就绪 (内置)"
-                TermuxBootstrap.isAvailable() -> "Termux 已连接 (系统)"
+                java.io.File("/data/data/com.termux/files/usr/bin/bash").canExecute() -> "Termux 已连接 (系统)"
                 else -> "Termux 未安装 — 使用系统 sh"
             }
             setTextColor(if (termuxUsable) SUCCESS else TEXT_TERTIARY)
@@ -254,35 +254,37 @@ class ShellView(context: Context) : FrameLayout(context) {
         outputText.text = "$ $cmd\n执行中…"
         Thread {
             try {
-                val pb = ProcessBuilder()
-                if (termuxUsable) {
-                    val env = if (TermuxBootstrap.isInstalled(context)) {
-                        TermuxBootstrap.buildEnvironment(context)
-                    } else {
-                        mapOf(
-                            "HOME" to termuxHome,
-                            "PREFIX" to termuxPrefix,
-                            "PATH" to "$termuxPrefix/bin:$termuxPrefix/bin/applets:/system/bin:/system/xbin",
-                            "LD_LIBRARY_PATH" to "$termuxPrefix/lib",
-                            "TMPDIR" to "$termuxPrefix/tmp",
-                            "TERM" to "xterm-256color",
-                            "LANG" to "en_US.UTF-8"
-                        )
-                    }
-                    val bash = if (TermuxBootstrap.isInstalled(context))
-                        TermuxBootstrap.getPrefixDir(context).absolutePath + "/bin/bash"
-                    else
-                        termuxBash
-                    pb.command(bash, "-c", "cd \"$currentDir\" && $cmd")
+                val envMap: Map<String, String>
+                val proc: Process
+
+                if (TermuxBootstrap.isInstalled(context)) {
+                    // 通过 linker + bash 执行（绕过 SELinux exec 限制）
+                    val builtEnv = TermuxBootstrap.buildEnvironment(context)
+                    proc = TermuxBootstrap.execBash(context, "cd \"$currentDir\" && $cmd", builtEnv)
+                    envMap = builtEnv
+                } else if (termuxUsable) {
+                    // 系统 Termux（另一个 app），可以直接 exec
+                    val env = mapOf(
+                        "HOME" to termuxHome,
+                        "PREFIX" to termuxPrefix,
+                        "PATH" to "$termuxPrefix/bin:$termuxPrefix/bin/applets:/system/bin:/system/xbin",
+                        "LD_LIBRARY_PATH" to "$termuxPrefix/lib",
+                        "TMPDIR" to "$termuxPrefix/tmp",
+                        "TERM" to "xterm-256color",
+                        "LANG" to "en_US.UTF-8"
+                    )
+                    val pb = ProcessBuilder(termuxBash, "-c", "cd \"$currentDir\" && $cmd")
                     pb.environment().putAll(env)
                     pb.directory(File(currentDir))
+                    proc = pb.start()
+                    envMap = env
                 } else {
-                    pb.command("sh", "-c", "cd \"$currentDir\" && $cmd")
+                    proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "cd \"$currentDir\" && $cmd"))
+                    envMap = emptyMap()
                 }
 
-                val proc = pb.start()
                 val stdout = BufferedReader(InputStreamReader(proc.inputStream)).readText()
-                val stderr = BufferedReader(InputStreamReader(proc.errorStream)).readText()
+                val stderr = try { BufferedReader(InputStreamReader(proc.errorStream)).readText() } catch (_: Exception) { "" }
                 val exitCode = proc.waitFor()
 
                 val result = buildString {

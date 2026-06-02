@@ -30,7 +30,7 @@ class SidebarView(context: Context) : FrameLayout(context) {
         private const val BG = 0xFF0A0A0B.toInt()
         private const val SURFACE = 0xFF141416.toInt()
         private const val SURFACE_HOVER = 0xFF252529.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
         private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
         private const val TEXT_SECONDARY = 0xFF8B8B93.toInt()
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
@@ -43,10 +43,6 @@ class SidebarView(context: Context) : FrameLayout(context) {
 
     var onConversationSelect: ((String) -> Unit)? = null
     var onNewChat: (() -> Unit)? = null
-    var onSettingsClick: (() -> Unit)? = null
-    var onStatusClick: (() -> Unit)? = null
-    var onLarkClick: (() -> Unit)? = null
-    var onShellClick: (() -> Unit)? = null
 
     private val sidebarWidth: Int
     private val contentView = LinearLayout(context)
@@ -179,71 +175,6 @@ class SidebarView(context: Context) : FrameLayout(context) {
         }
         scrollView.addView(conversationContainer)
         contentView.addView(scrollView)
-
-        // Bottom: Settings button
-        val bottomSection = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-        }
-
-        val bottomSeparator = View(context).apply {
-            setBackgroundColor(BORDER)
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(1))
-        }
-        bottomSection.addView(bottomSeparator)
-
-        val settingsBtn = TextView(context).apply {
-            text = "⚙  Settings"
-            setTextColor(TEXT_SECONDARY)
-            textSize = baseFontSize.toFloat()
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                onSettingsClick?.invoke()
-            }
-        }
-        bottomSection.addView(settingsBtn)
-
-        val statusBtn = TextView(context).apply {
-            text = "📊  系统状态"
-            setTextColor(TEXT_SECONDARY)
-            textSize = baseFontSize.toFloat()
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                onStatusClick?.invoke()
-            }
-        }
-        bottomSection.addView(statusBtn)
-
-        val larkBtn = TextView(context).apply {
-            text = "📨  飞书 CLI"
-            setTextColor(TEXT_SECONDARY)
-            textSize = baseFontSize.toFloat()
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                onLarkClick?.invoke()
-            }
-        }
-        bottomSection.addView(larkBtn)
-
-        val shellBtn = TextView(context).apply {
-            text = ">_  Shell"
-            setTextColor(TEXT_SECONDARY)
-            textSize = baseFontSize.toFloat()
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-            setOnClickListener {
-                onShellClick?.invoke()
-            }
-        }
-        bottomSection.addView(shellBtn)
-        contentView.addView(bottomSection)
     }
 
     // 创建新对话按钮

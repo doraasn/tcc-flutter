@@ -1,138 +1,180 @@
 package com.tcc.data
 
 import android.content.Context
+import com.tcc.model.ModelSlot
+import com.tcc.model.Provider
+import com.tcc.model.UsageStats
 import org.json.JSONArray
 import org.json.JSONObject
 
-// 配置管理器 - 读写 SharedPreferences
+// 配置管理器 — 基于 Provider 的模型配置体系
 class ConfigManager private constructor(context: Context) {
 
     private val prefs = context.getSharedPreferences("mcc_config", Context.MODE_PRIVATE)
 
-    fun getApiKey(): String = prefs.getString("api_key", "") ?: ""
-    fun setApiKey(value: String) { prefs.edit().putString("api_key", value).apply() }
-
-    fun getBaseUrl(): String = prefs.getString("base_url", "https://api.deepseek.com/anthropic") ?: "https://api.deepseek.com/anthropic"
-    fun setBaseUrl(value: String) { prefs.edit().putString("base_url", value).apply() }
-
-    fun getModel(): String = prefs.getString("model", "deepseek-v4-flash") ?: "deepseek-v4-flash"
-    fun setModel(value: String) { prefs.edit().putString("model", value).apply() }
-
+    // ---- 通用设置 ----
+    fun getFontSize(): Int = prefs.getInt("font_size", 14)
+    fun setFontSize(value: Int) { prefs.edit().putInt("font_size", value).apply() }
     fun getSystemPrompt(): String = prefs.getString("system_prompt", "") ?: ""
     fun setSystemPrompt(value: String) { prefs.edit().putString("system_prompt", value).apply() }
 
-    fun getMaxTokens(): Int = prefs.getInt("max_tokens", 4096)
-    fun setMaxTokens(value: Int) { prefs.edit().putInt("max_tokens", value).apply() }
-
-    fun getFontSize(): Int = prefs.getInt("font_size", 14)
-    fun setFontSize(value: Int) { prefs.edit().putInt("font_size", value).apply() }
-
-    // WebDAV
     fun getWebDavUrl(): String = prefs.getString("webdav_url", "") ?: ""
     fun setWebDavUrl(value: String) { prefs.edit().putString("webdav_url", value).apply() }
-
     fun getWebDavUser(): String = prefs.getString("webdav_user", "") ?: ""
     fun setWebDavUser(value: String) { prefs.edit().putString("webdav_user", value).apply() }
-
     fun getWebDavPass(): String = prefs.getString("webdav_pass", "") ?: ""
     fun setWebDavPass(value: String) { prefs.edit().putString("webdav_pass", value).apply() }
 
-    // 获取所有配置
-    fun getAll(): JSONObject {
-        return JSONObject().apply {
-            put("api_key", getApiKey())
-            put("base_url", getBaseUrl())
-            put("model", getModel())
-            put("system_prompt", getSystemPrompt())
-            put("max_tokens", getMaxTokens())
-            put("font_size", getFontSize())
-            put("webdav_url", getWebDavUrl())
-            put("webdav_user", getWebDavUser())
-            put("prompt_templates", getPromptTemplatesRaw())
-        }
+    // ---- Provider 管理 ----
+
+    private val providersKey = "providers"
+    private val activeProviderIdKey = "active_provider_id"
+    private val activeModelKeyKey = "active_model_key"
+
+    fun getProviders(): MutableList<Provider> {
+        val json = prefs.getString(providersKey, null) ?: return defaultProviders()
+        return try {
+            val arr = JSONArray(json)
+            val list = mutableListOf<Provider>()
+            for (i in 0 until arr.length()) list.add(Provider.fromJson(arr.getJSONObject(i)))
+            list
+        } catch (_: Exception) { defaultProviders() }
     }
 
-    // 从 JSON 更新配置
-    fun updateFromJson(json: JSONObject) {
-        val editor = prefs.edit()
-        if (json.has("api_key")) editor.putString("api_key", json.optString("api_key", ""))
-        if (json.has("base_url")) editor.putString("base_url", json.optString("base_url", "https://api.deepseek.com/anthropic"))
-        if (json.has("model")) editor.putString("model", json.optString("model", "deepseek-v4-flash"))
-        if (json.has("system_prompt")) editor.putString("system_prompt", json.optString("system_prompt", ""))
-        if (json.has("max_tokens")) editor.putInt("max_tokens", json.optInt("max_tokens", 4096))
-        if (json.has("font_size")) editor.putInt("font_size", json.optInt("font_size", 14))
-        if (json.has("webdav_url")) editor.putString("webdav_url", json.optString("webdav_url", ""))
-        if (json.has("webdav_user")) editor.putString("webdav_user", json.optString("webdav_user", ""))
-        if (json.has("webdav_pass")) editor.putString("webdav_pass", json.optString("webdav_pass", ""))
-        editor.apply()
-
-        if (json.has("prompt_templates")) {
-            val templates = json.optJSONArray("prompt_templates")
-            if (templates != null) {
-                prefs.edit().putString("prompt_templates", templates.toString()).apply()
-            }
-        }
+    fun getActiveProvider(): Provider? {
+        val id = prefs.getString(activeProviderIdKey, null)
+        return getProviders().find { it.id == id } ?: getProviders().firstOrNull()
     }
 
-    // 获取提示词模板列表
+    fun getActiveModelKey(): String =
+        prefs.getString(activeModelKeyKey, "ANTHROPIC_MODEL") ?: "ANTHROPIC_MODEL"
+
+    fun getActiveModelSlot(): ModelSlot? {
+        val provider = getActiveProvider() ?: return null
+        return provider.models[getActiveModelKey()] ?: provider.models["ANTHROPIC_MODEL"]
+    }
+
+    fun setActiveModelKey(key: String) { prefs.edit().putString(activeModelKeyKey, key).apply() }
+
+    fun switchProvider(providerId: String) {
+        prefs.edit().putString(activeProviderIdKey, providerId).apply()
+        prefs.edit().putString(activeModelKeyKey, "ANTHROPIC_MODEL").apply()
+    }
+
+    fun switchModel(providerId: String, modelKey: String) {
+        prefs.edit().putString(activeProviderIdKey, providerId).apply()
+        prefs.edit().putString(activeModelKeyKey, modelKey).apply()
+    }
+
+    fun saveProvider(provider: Provider) {
+        val list = getProviders().toMutableList()
+        val idx = list.indexOfFirst { it.id == provider.id }
+        if (idx >= 0) list[idx] = provider else list.add(provider)
+        saveProviders(list)
+    }
+
+    fun deleteProvider(id: String) {
+        saveProviders(getProviders().filter { it.id != id })
+    }
+
+    private fun saveProviders(list: List<Provider>) {
+        val arr = JSONArray()
+        for (p in list) arr.put(p.toJson())
+        prefs.edit().putString(providersKey, arr.toString()).apply()
+    }
+
+    private fun defaultProviders(): MutableList<Provider> {
+        val mm = Provider.mimoPreset()
+        val ds = Provider.deepSeekPreset()
+        val list = mutableListOf(mm, ds, Provider.anthropicPreset())
+        saveProviders(list)
+        prefs.edit().putString(activeProviderIdKey, mm.id).apply()
+        return list
+    }
+
+    // ---- 使用统计 ----
+
+    fun getUsageStats(): MutableList<UsageStats> {
+        val json = prefs.getString("usage_stats", null) ?: return mutableListOf()
+        return try {
+            val arr = JSONArray(json)
+            val list = mutableListOf<UsageStats>()
+            for (i in 0 until arr.length()) list.add(UsageStats.fromJson(arr.getJSONObject(i)))
+            list
+        } catch (_: Exception) { mutableListOf() }
+    }
+
+    fun addUsageTokens(providerId: String, modelName: String, inputTokens: Long, outputTokens: Long, costUsd: Double) {
+        val list = getUsageStats().toMutableList()
+        val idx = list.indexOfFirst { it.providerId == providerId && it.modelName == modelName }
+        if (idx >= 0) {
+            list[idx].totalInputTokens += inputTokens
+            list[idx].totalOutputTokens += outputTokens
+            list[idx].totalCostUsd += costUsd
+        } else {
+            list.add(UsageStats(providerId, modelName, inputTokens, outputTokens, costUsd))
+        }
+        val arr = JSONArray()
+        for (s in list) arr.put(s.toJson())
+        prefs.edit().putString("usage_stats", arr.toString()).apply()
+    }
+
+    fun getTotalCost(): Double = getUsageStats().sumOf { it.totalCostUsd }
+
+    // ---- 提示词模板 ----
     fun getPromptTemplates(): List<Pair<String, String>> {
-        val result = mutableListOf<Pair<String, String>>()
         val raw = getPromptTemplatesRaw()
+        val result = mutableListOf<Pair<String, String>>()
         for (i in 0 until raw.length()) {
             val obj = raw.optJSONObject(i)
             if (obj != null) {
-                val name = obj.optString("name", "")
-                val content = obj.optString("content", "")
-                if (name.isNotEmpty()) {
-                    result.add(Pair(name, content))
-                }
+                val n = obj.optString("name", ""); val c = obj.optString("content", "")
+                if (n.isNotEmpty()) result.add(Pair(n, c))
             }
         }
         return result
     }
 
-    // 保存提示词模板
-    fun savePromptTemplate(name: String, content: String) {
-        val raw = getPromptTemplatesRaw()
-        // Replace existing entry with same name, or append
-        var found = false
-        for (i in 0 until raw.length()) {
-            val obj = raw.optJSONObject(i)
-            if (obj != null && obj.optString("name", "") == name) {
-                obj.put("content", content)
-                found = true
-                break
-            }
-        }
-        if (!found) {
-            raw.put(JSONObject().apply {
-                put("name", name)
-                put("content", content)
-            })
-        }
+    fun getPromptTemplatesRaw(): JSONArray {
+        val json = prefs.getString("prompt_templates", "[]") ?: "[]"
+        return try { JSONArray(json) } catch (_: Exception) { JSONArray() }
+    }
+
+    fun savePromptTemplatesRaw(raw: JSONArray) {
         prefs.edit().putString("prompt_templates", raw.toString()).apply()
     }
 
-    // 删除提示词模板
-    fun deletePromptTemplate(name: String) {
-        val raw = getPromptTemplatesRaw()
-        val updated = JSONArray()
-        for (i in 0 until raw.length()) {
-            val obj = raw.optJSONObject(i)
-            if (obj != null && obj.optString("name", "") != name) {
-                updated.put(obj)
-            }
-        }
-        prefs.edit().putString("prompt_templates", updated.toString()).apply()
+    // ---- 导出/导入（WebDAV 备份用） ----
+    fun getExportData(): JSONObject = JSONObject().apply {
+        put("font_size", getFontSize())
+        put("system_prompt", getSystemPrompt())
+        put("webdav_url", getWebDavUrl())
+        put("webdav_user", getWebDavUser())
+        put("prompt_templates", getPromptTemplatesRaw())
+        put("providers", JSONArray(getProviders().map { it.toJson() }))
+        put("active_provider_id", prefs.getString(activeProviderIdKey, ""))
+        put("active_model_key", prefs.getString(activeModelKeyKey, ""))
     }
 
-    // 获取原始模板 JSON
-    private fun getPromptTemplatesRaw(): JSONArray {
-        val json = prefs.getString("prompt_templates", "[]") ?: "[]"
-        return try {
-            JSONArray(json)
-        } catch (e: Exception) {
-            JSONArray()
+    fun importFromJson(json: JSONObject) {
+        if (json.has("font_size")) setFontSize(json.optInt("font_size", 14))
+        if (json.has("system_prompt")) setSystemPrompt(json.optString("system_prompt", ""))
+        if (json.has("webdav_url")) setWebDavUrl(json.optString("webdav_url", ""))
+        if (json.has("webdav_user")) setWebDavUser(json.optString("webdav_user", ""))
+        if (json.has("prompt_templates")) {
+            val t = json.optJSONArray("prompt_templates")
+            if (t != null) savePromptTemplatesRaw(t)
+        }
+        if (json.has("providers")) {
+            val arr = json.optJSONArray("providers")
+            if (arr != null) {
+                val list = mutableListOf<Provider>()
+                for (i in 0 until arr.length()) list.add(Provider.fromJson(arr.getJSONObject(i)))
+                saveProviders(list)
+            }
+        }
+        if (json.has("active_provider_id")) {
+            prefs.edit().putString(activeProviderIdKey, json.optString("active_provider_id", "")).apply()
         }
     }
 
@@ -140,12 +182,10 @@ class ConfigManager private constructor(context: Context) {
         @Volatile
         private var instance: ConfigManager? = null
 
-        // 获取单例实例
         @JvmStatic
-        fun getInstance(context: Context): ConfigManager {
-            return instance ?: synchronized(this) {
+        fun getInstance(context: Context): ConfigManager =
+            instance ?: synchronized(this) {
                 instance ?: ConfigManager(context.applicationContext).also { instance = it }
             }
-        }
     }
 }

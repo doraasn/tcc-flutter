@@ -11,6 +11,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.tcc.TermuxBootstrap
 import com.tcc.api.LarkClient
 import java.io.File
 
@@ -21,7 +22,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
         private const val BG = 0xFF0A0A0B.toInt()
         private const val SURFACE = 0xFF141416.toInt()
         private const val SURFACE_ELEVATED = 0xFF1C1C1F.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
         private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
         private const val TEXT_SECONDARY = 0xFF8B8B93.toInt()
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
@@ -44,8 +45,6 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     private var larkStatusDot: View? = null
     private var claudeStatusText: TextView? = null
     private var claudeStatusDot: View? = null
-    private var prootStatusText: TextView? = null
-    private var prootStatusDot: View? = null
     private var storageFreeText: TextView? = null
     private var storageTotalText: TextView? = null
     private var larkAuthText: TextView? = null
@@ -205,11 +204,6 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
         claudeStatusText = createStatusLabel("检查中…")
         section.addView(createStatusRow("Claude Code", claudeStatusDot!!, claudeStatusText!!))
 
-        // proot
-        prootStatusDot = createStatusDot()
-        prootStatusText = createStatusLabel("检查中…")
-        section.addView(createStatusRow("proot", prootStatusDot!!, prootStatusText!!))
-
         return section
     }
 
@@ -342,7 +336,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
         refresh()
     }
 
-    // 检查环境（Node.js/glibc/lark-cli/Claude Code/proot）
+    // 检查环境（Node.js/glibc/lark-cli/Claude Code）
     private fun checkEnvironment() {
         Thread {
             // Node.js
@@ -356,16 +350,20 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
 
             // Claude Code
             checkCommand("claude", "--version", claudeStatusDot, claudeStatusText)
-
-            // proot
-            checkCommand("proot", "--version", prootStatusDot, prootStatusText)
         }.start()
     }
 
     // 检查命令是否可用
     private fun checkCommand(command: String, arg: String, dot: View?, statusText: TextView?) {
         try {
-            val proc = Runtime.getRuntime().exec(arrayOf(command, arg))
+            val prefix = TermuxBootstrap.getPrefixDir(context)
+            val binPath = File(prefix, "bin/$command").absolutePath
+            // claude 是非 PIE 二进制，需要用 execGlibcBinary
+            val proc = if (command == "claude") {
+                TermuxBootstrap.execGlibcBinary(context, binPath, arg)
+            } else {
+                TermuxBootstrap.execInTermux(context, binPath, arg)
+            }
             val output = proc.inputStream.bufferedReader().readText().trim()
             val exitCode = proc.waitFor()
             val firstLine = output.lines().firstOrNull()?.take(60)?.ifEmpty { null }
@@ -407,7 +405,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
 
     // 检查 lark-cli 是否可用
     private fun checkLarkCliAvailable() {
-        val available = LarkClient.isAvailable()
+        val available = LarkClient.isAvailable(context)
         postOnUi {
             if (available) {
                 larkStatusDot?.setBackgroundDrawable(createRoundedDrawable(SUCCESS, dp(5)))
@@ -424,8 +422,9 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     // 检查存储空间
     private fun checkStorage() {
         try {
-            val freeBytes = File("/").freeSpace
-            val totalBytes = File("/").totalSpace
+            val dataDir = context.filesDir.parentFile ?: File("/")
+            val freeBytes = dataDir.freeSpace
+            val totalBytes = dataDir.totalSpace
             val freeGb = String.format("%.1f GB", freeBytes / (1024.0 * 1024.0 * 1024.0))
             val totalGb = String.format("%.1f GB", totalBytes / (1024.0 * 1024.0 * 1024.0))
             postOnUi {
@@ -445,7 +444,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     // 检查 Lark 认证状态
     private fun checkLarkAuth() {
         Thread {
-            val status = LarkClient.authStatus()
+            val status = LarkClient.authStatus(context)
             postOnUi {
                 larkAuthText?.text = status
                 val isError = status.contains("Error", ignoreCase = true) ||

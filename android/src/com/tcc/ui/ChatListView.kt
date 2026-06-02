@@ -27,7 +27,7 @@ class ChatListView(context: Context) : ScrollView(context) {
         private const val BG = 0xFF0A0A0B.toInt()
         private const val SURFACE = 0xFF141416.toInt()
         private const val SURFACE_ELEVATED = 0xFF1C1C1F.toInt()
-        private const val ACCENT = 0xFF6C5CE7.toInt()
+        private const val ACCENT = 0xFFFF8C00.toInt()
         private const val TEXT_PRIMARY = 0xFFFFFFFF.toInt()
         private const val TEXT_SECONDARY = 0xFF8B8B93.toInt()
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
@@ -72,8 +72,8 @@ class ChatListView(context: Context) : ScrollView(context) {
 
     // 添加新消息
     fun addMessage(msg: Message) {
-        messages.add(msg)
         removeEmptyState()
+        messages.add(msg)
         addMessageView(msg)
         scrollToBottom()
         if (msg.isStreaming) {
@@ -133,7 +133,7 @@ class ChatListView(context: Context) : ScrollView(context) {
             }
         }
 
-        // MCC logo text
+        // TCC logo text
         val logoText = TextView(context).apply {
             text = "TCC"
             setTextColor(ACCENT)
