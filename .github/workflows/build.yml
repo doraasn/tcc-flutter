@@ -57,47 +57,24 @@ jobs:
           sdkmanager --install "ndk;${{ env.NDK_VERSION }}" || true
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Build proot (cross-compile for arm64)
+      - name: Setup proot (simple)
         run: |
-          chmod +x scripts/build_proot.sh
-          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" \
-            bash scripts/build_proot.sh
+          chmod +x scripts/build_proot_simple.sh
+          bash scripts/build_proot_simple.sh
 
       - name: Verify proot binary
         run: |
           FILE android/app/src/main/jniLibs/arm64-v8a/proot-arm64
           ls -lh android/app/src/main/jniLibs/arm64-v8a/proot-arm64
 
-      - name: Install QEMU for rootfs build
-        if: github.event.inputs.build_rootfs == 'true' || github.ref == 'refs/heads/main'
+      - name: Create minimal rootfs placeholder
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-user-static
-          sudo cp /usr/bin/qemu-aarch64-static /usr/local/bin/
-
-      - name: Build rootfs
-        if: github.event.inputs.build_rootfs == 'true' || github.ref == 'refs/heads/main'
-        run: |
-          chmod +x scripts/build_rootfs.sh
-          bash scripts/build_rootfs.sh
-
-      - name: Download prebuilt rootfs (fallback)
-        if: failure() || (github.event.inputs.build_rootfs != 'true' && github.ref != 'refs/heads/main')
-        run: |
-          ROOTFS_URL=$(gh api repos/${{ github.repository }}/releases/tags/rootfs-v${{ env.CLAUDE_VERSION }}/assets \
-            --jq '.[0].browser_download_url' 2>/dev/null || echo "")
-          if [ -n "$ROOTFS_URL" ]; then
-            curl -fsSL -o assets/core/rootfs.tgz "$ROOTFS_URL"
-            echo "Downloaded prebuilt rootfs from releases"
-          else
-            echo "No prebuilt rootfs found, checking for cached version..."
-            if [ ! -f assets/core/rootfs.tgz ]; then
-              echo "::warning::No rootfs available. APK will be built without rootfs."
-              touch assets/core/rootfs.tgz
-            fi
+          mkdir -p assets/core
+          if [ ! -f assets/core/rootfs.tgz ]; then
+            echo "Creating placeholder rootfs..."
+            tar -czf assets/core/rootfs.tgz --files-from /dev/null
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ls -lh assets/core/rootfs.tgz
 
       - name: Flutter pub get
         run: flutter pub get
