@@ -4,6 +4,15 @@ plugins {
     id 'dev.flutter.flutter-gradle-plugin'
 }
 
+// Read version from pubspec.yaml
+def flutterProjectRoot = project.projectDir.parentFile.parentFile
+def pubspec = new File(flutterProjectRoot, 'pubspec.yaml').text
+def versionMatch = pubspec =~ /version:\s+(\d+)\.(\d+)\.(\d+)\+(\d+)/
+def versionMajor = versionMatch.find() ? versionMatch.group(1) : '1'
+def versionMinor = versionMatch.find() ? versionMatch.group(2) : '0'
+def versionPatch = versionMatch.find() ? versionMatch.group(3) : '0'
+def versionBuild = versionMatch.find() ? versionMatch.group(4) : '1'
+
 android {
     namespace 'com.tcc.app'
     compileSdk 35
@@ -25,31 +34,59 @@ android {
         applicationId 'com.tcc.app'
         minSdk 24
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode versionBuild.toInteger()
+        versionName "${versionMajor}.${versionMinor}.${versionPatch}"
 
+        // Only build for arm64-v8a (the only supported architecture)
         ndk {
             abiFilters 'arm64-v8a'
         }
     }
 
-    buildTypes {
-        release {
-            signingConfig signingConfigs.debug
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
         }
     }
 
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+            debuggable true
+            jniDebuggable true
+        }
+        release {
+            signingConfig signingConfigs.debug  // Use debug key; replace with release key for production
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            debuggable false
+            jniDebuggable false
+        }
+    }
+
+    // Rename APK output
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             outputFileName = "TCC.apk"
         }
     }
 
+    // Prevent compression of binary assets (rootfs, proot)
+    // This avoids double-compression and allows mmap-like access
     aaptOptions {
         noCompress 'tgz', 'tar', 'so'
+    }
+
+    // Lint configuration
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
     }
 }
 
@@ -59,4 +96,5 @@ flutter {
 
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.0'
+    implementation 'androidx.annotation:annotation:1.8.0'
 }

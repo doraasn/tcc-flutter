@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import '../core/theme.dart';
 import '../models/chat_message.dart';
+import '../providers/workspace_provider.dart';
 import '../providers/process_provider.dart';
+import '../widgets/project_picker.dart';
 import 'input_bar.dart';
+import 'message_bubble.dart';
 
 class ChatArea extends ConsumerStatefulWidget {
   final Function(String) onSendMessage;
@@ -96,13 +98,13 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
       runSpacing: 8,
       children: [
         _buildQuickAction('New Project', Icons.add, () {
-          // TODO: Show new project dialog
+          ProjectPicker.show(context);
         }),
         _buildQuickAction('Open Project', Icons.folder_open, () {
-          // TODO: Show project picker
+          ProjectPicker.show(context);
         }),
         _buildQuickAction('Settings', Icons.settings, () {
-          // TODO: Show settings
+          _openSettings();
         }),
       ],
     );
@@ -137,85 +139,44 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: messages.length,
       itemBuilder: (context, index) {
-        return _buildMessageBubble(messages[index]);
+        return MessageBubble(message: messages[index]);
       },
     );
   }
 
-  Widget _buildMessageBubble(ChatMessage message) {
-    final isUser = message.role == 'user';
-    final isError = message.role == 'error';
+  void _openSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => const SettingsScreenPlaceholder(),
+      ),
+    );
+  }
+}
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isUser) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: isError ? TccColors.error : TccColors.primary,
-              child: Icon(
-                isError ? Icons.error : Icons.auto_awesome,
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isUser ? TccColors.primary.withOpacity(0.1) : TccColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isUser ? TccColors.primary.withOpacity(0.3) : TccColors.border,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (isError)
-                    Text(
-                      message.error ?? 'Error',
-                      style: TccTextStyles.bodyMedium.copyWith(color: TccColors.error),
-                    )
-                  else
-                    MarkdownBody(
-                      data: message.content,
-                      styleSheet: MarkdownStyleSheet(
-                        p: TccTextStyles.bodyLarge,
-                        code: TccTextStyles.code.copyWith(
-                          backgroundColor: TccColors.surfaceLight,
-                        ),
-                        codeblockDecoration: BoxDecoration(
-                          color: TccColors.surfaceLight,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  if (message.isStreaming) ...[
-                    const SizedBox(height: 8),
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+/// Placeholder to avoid circular import with settings_screen.dart.
+/// The actual settings screen is opened from HomeScreen.
+class SettingsScreenPlaceholder extends StatelessWidget {
+  const SettingsScreenPlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: TccColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Center(
+        child: Text(
+          'Open settings from the app bar',
+          style: TccTextStyles.bodyMedium.copyWith(
+            color: TccColors.onSurfaceVariant,
           ),
-          if (isUser) ...[
-            const SizedBox(width: 12),
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: TccColors.surfaceLight,
-              child: const Icon(Icons.person, size: 16),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'workspace_state.freezed.dart';
+part 'workspace_state.g.dart';
 
 @freezed
 class WorkspaceState with _$WorkspaceState {
@@ -9,7 +10,11 @@ class WorkspaceState with _$WorkspaceState {
     @Default('') String projectName,
     @Default('') String cwd,
     @Default([]) List<String> openSpecSkills,
+    @Default(0) int createdAt,
   }) = _WorkspaceState;
+
+  factory WorkspaceState.fromJson(Map<String, dynamic> json) =>
+      _$WorkspaceStateFromJson(json);
 }
 
 @freezed
@@ -21,6 +26,9 @@ class ProcessState with _$ProcessState {
     String? error,
     @Default([]) List<String> outputBuffer,
   }) = _ProcessState;
+
+  factory ProcessState.fromJson(Map<String, dynamic> json) =>
+      _$ProcessStateFromJson(json);
 }
 
 @freezed
@@ -30,7 +38,11 @@ class SessionInfo with _$SessionInfo {
     required String title,
     required DateTime createdAt,
     required String projectId,
+    @Default('') String lastMessage,
   }) = _SessionInfo;
+
+  factory SessionInfo.fromJson(Map<String, dynamic> json) =>
+      _$SessionInfoFromJson(json);
 }
 
 @freezed
@@ -44,4 +56,7 @@ class ModelConfig with _$ModelConfig {
     @Default(200000) int contextLength,
     @Default(false) bool isActive,
   }) = _ModelConfig;
+
+  factory ModelConfig.fromJson(Map<String, dynamic> json) =>
+      _$ModelConfigFromJson(json);
 }
