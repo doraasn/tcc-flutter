@@ -8,8 +8,11 @@ import 'process_provider.dart';
 /// Providers
 /// ---------------------------------------------------------------------------
 
-/// High-level chat controller that wraps the raw message list with
+/// High-level chat controller that wraps the raw [chatMessagesProvider] with
 /// convenience methods for adding, clearing, and exporting messages.
+///
+/// All mutations are written through to [chatMessagesProvider] so that any
+/// widget watching that provider (e.g. [ChatArea]) sees updates immediately.
 final chatProvider =
     StateNotifierProvider<ChatController, List<ChatMessage>>((ref) {
   return ChatController(ref);
@@ -35,11 +38,38 @@ final chatLastMessageProvider = Provider<ChatMessage?>((ref) {
 /// Controller
 /// ---------------------------------------------------------------------------
 
+/// Manages the chat message list with a rich API.
+///
+/// Internally every write goes through to [chatMessagesProvider] so that
+/// existing widgets that watch that provider continue to work.
 class ChatController extends StateNotifier<List<ChatMessage>> {
-  ChatController(this._ref) : super([]);
+  ChatController(this._ref) : super([]) {
+    // Bootstrap from whatever the raw provider currently holds.
+    state = List<ChatMessage>.from(_ref.read(chatMessagesProvider));
+
+    // Mirror any changes the process provider makes directly.
+    _ref.listen<List<ChatMessage>>(chatMessagesProvider, (prev, next) {
+      // Avoid feedback loops: only update if the lists differ by reference
+      // or contents.  The _sync() call in our own methods temporarily
+      // writes the same list back, so the listener sees the same object
+      // and skips the assignment.
+      if (!identical(state, next)) {
+        state = List<ChatMessage>.from(next);
+      }
+    });
+  }
 
   static const _uuid = Uuid();
   final Ref _ref;
+
+  // ---------------------------------------------------------------------------
+  // Private: keep chatMessagesProvider in sync
+  // ---------------------------------------------------------------------------
+
+  /// Push the current [state] into [chatMessagesProvider] so widgets rebuild.
+  void _sync() {
+    _ref.read(chatMessagesProvider.notifier).state = state;
+  }
 
   // ---------------------------------------------------------------------------
   // Read helpers
@@ -55,9 +85,11 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
 
   /// Whether a streaming response is still in progress.
   bool get isStreaming =>
-      state.isNotEmpty && state.last.role == 'assistant' && state.last.isStreaming;
+      state.isNotEmpty &&
+      state.last.role == 'assistant' &&
+      state.last.isStreaming;
 
-  /// Number of tokens (rough estimate: 1 token ~ 4 chars).
+  /// Rough token estimate (1 token ~ 4 chars).
   int get estimatedTokenCount {
     var total = 0;
     for (final m in state) {
@@ -70,7 +102,7 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
   // Mutations
   // ---------------------------------------------------------------------------
 
-  /// Add a user message and send it to the Claude process.
+  /// Add a user message and forward it to the Claude process.
   Future<void> addUserMessage(String content) async {
     if (content.trim().isEmpty) return;
 
@@ -82,6 +114,7 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
     );
 
     state = [...state, message];
+    _sync();
 
     // Forward to the process so it actually reaches Claude.
     final processCtrl = _ref.read(processProvider.notifier);
@@ -112,6 +145,7 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
       ));
     }
     state = messages;
+    _sync();
   }
 
   /// Finalise the current streaming assistant message.
@@ -121,6 +155,7 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
     messages[messages.length - 1] =
         messages.last.copyWith(isStreaming: false);
     state = messages;
+    _sync();
   }
 
   /// Add a system message (e.g. "Session resumed").
@@ -134,6 +169,7 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
         timestamp: DateTime.now(),
       ),
     ];
+    _sync();
   }
 
   /// Add an error message.
@@ -149,21 +185,25 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
         metadata: details != null ? {'details': details} : null,
       ),
     ];
+    _sync();
   }
 
   /// Remove a single message by its [id].
   void removeMessage(String id) {
     state = state.where((m) => m.id != id).toList();
+    _sync();
   }
 
   /// Replace the entire message list (e.g. after loading from disk).
   void replaceAll(List<ChatMessage> messages) {
-    state = messages;
+    state = List<ChatMessage>.from(messages);
+    _sync();
   }
 
   /// Clear the entire chat history.
   void clearHistory() {
     state = [];
+    _sync();
   }
 
   // ---------------------------------------------------------------------------
@@ -188,7 +228,9 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
         _ => m.role,
       };
       final time =
-          '${m.timestamp.hour.toString().padLeft(2, '0')}:${m.timestamp.minute.toString().padLeft(2, '0')}:${m.timestamp.second.toString().padLeft(2, '0')}';
+          '${m.timestamp.hour.toString().padLeft(2, '0')}:'
+          '${m.timestamp.minute.toString().padLeft(2, '0')}:'
+          '${m.timestamp.second.toString().padLeft(2, '0')}';
       buf.writeln('**$label** _($time)_\n');
       buf.writeln('${m.content}\n');
     }

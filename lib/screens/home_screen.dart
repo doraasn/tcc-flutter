@@ -12,7 +12,6 @@ import '../widgets/chat_area.dart';
 import '../widgets/project_picker.dart';
 import '../widgets/command_palette.dart';
 import '../widgets/opsx_bar.dart';
-import '../widgets/session_list.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -27,7 +26,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _initialized = false;
   bool _commandPaletteOpen = false;
   String _commandQuery = '';
-  final _commandFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -37,12 +35,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _registerShortcuts();
     });
-  }
-
-  @override
-  void dispose() {
-    _commandFocusNode.dispose();
-    super.dispose();
   }
 
   Future<void> _initialize() async {

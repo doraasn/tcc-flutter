@@ -1,0 +1,154 @@
+name: Build TCC APK
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      build_rootfs:
+        description: 'Rebuild rootfs from scratch'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  FLUTTER_VERSION: '3.32.2'
+  JAVA_VERSION: '17'
+  NDK_VERSION: '27.0.12077973'
+  CLAUDE_VERSION: '2.1.153'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 35
+          build-tools: 35.0.0
+          accept-android-sdk-licenses: true
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager --install "ndk;${{ env.NDK_VERSION }}" || true
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+
+      - name: Build proot (cross-compile for arm64)
+        run: |
+          chmod +x scripts/build_proot.sh
+          ANDROID_NDK_HOME="$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" \
+            bash scripts/build_proot.sh
+
+      - name: Verify proot binary
+        run: |
+          FILE android/app/src/main/jniLibs/arm64-v8a/proot-arm64
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/proot-arm64
+
+      - name: Install QEMU for rootfs build
+        if: github.event.inputs.build_rootfs == 'true' || github.ref == 'refs/heads/main'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static
+          sudo cp /usr/bin/qemu-aarch64-static /usr/local/bin/
+
+      - name: Build rootfs
+        if: github.event.inputs.build_rootfs == 'true' || github.ref == 'refs/heads/main'
+        run: |
+          chmod +x scripts/build_rootfs.sh
+          bash scripts/build_rootfs.sh
+
+      - name: Download prebuilt rootfs (fallback)
+        if: failure() || (github.event.inputs.build_rootfs != 'true' && github.ref != 'refs/heads/main')
+        run: |
+          ROOTFS_URL=$(gh api repos/${{ github.repository }}/releases/tags/rootfs-v${{ env.CLAUDE_VERSION }}/assets \
+            --jq '.[0].browser_download_url' 2>/dev/null || echo "")
+          if [ -n "$ROOTFS_URL" ]; then
+            curl -fsSL -o assets/core/rootfs.tgz "$ROOTFS_URL"
+            echo "Downloaded prebuilt rootfs from releases"
+          else
+            echo "No prebuilt rootfs found, checking for cached version..."
+            if [ ! -f assets/core/rootfs.tgz ]; then
+              echo "::warning::No rootfs available. APK will be built without rootfs."
+              touch assets/core/rootfs.tgz
+            fi
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Run code generation
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release --target-platform=android-arm64
+
+      - name: Verify APK
+        run: |
+          APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
+          if [ -f "$APK_PATH" ]; then
+            cp "$APK_PATH" build/app/outputs/flutter-apk/TCC.apk
+            echo "APK built successfully"
+            ls -lh build/app/outputs/flutter-apk/TCC.apk
+            echo "## APK Details" >> $GITHUB_STEP_SUMMARY
+            echo "- Size: $(ls -lh build/app/outputs/flutter-apk/TCC.apk | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
+            echo "- proot: $(ls -lh android/app/src/main/jniLibs/arm64-v8a/proot-arm64 | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
+            echo "- rootfs: $(ls -lh assets/core/rootfs.tgz | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::error::APK not found at expected path"
+            exit 1
+          fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TCC-release
+          path: build/app/outputs/flutter-apk/TCC.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload rootfs asset
+        if: hashFiles('assets/core/rootfs.tgz') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-tgz
+          path: assets/core/rootfs.tgz
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Create release (on tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/TCC.apk
+            assets/core/rootfs.tgz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

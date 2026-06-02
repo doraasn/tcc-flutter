@@ -41,6 +41,11 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   bool get isRunning => state.isRunning;
 
+  /// One-time initialisation (extracts rootfs if needed).
+  Future<void> initialize() async {
+    await _prootService.initialize();
+  }
+
   // ---------------------------------------------------------------------------
   // Start
   // ---------------------------------------------------------------------------

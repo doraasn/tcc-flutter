@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security configuration for TCC.
+  Allows cleartext traffic to local services and dev endpoints.
+  Production API endpoints (Anthropic, DeepSeek, etc.) use HTTPS.
+-->
+<network-security-config>
+    <!-- Allow cleartext for local proot/development traffic -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+
+    <!-- Default: HTTPS only for all other domains -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>
