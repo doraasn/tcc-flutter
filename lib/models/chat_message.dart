@@ -38,7 +38,7 @@ class SlashCommand with _$SlashCommand {
   const factory SlashCommand({
     required String name,
     required String description,
-    @Default('') String category,
+    String? category,
   }) = _SlashCommand;
 
   factory SlashCommand.fromJson(Map<String, dynamic> json) =>
