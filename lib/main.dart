@@ -14,11 +14,11 @@ void main() async {
   runApp(const ProviderScope(child: TccApp()));
 }
 
-class TccApp extends StatelessWidget {
+class TccApp extends ConsumerWidget {
   const TccApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'TCC',
       debugShowCheckedModeBanner: false,

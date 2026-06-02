@@ -4,8 +4,10 @@ import '../core/theme.dart';
 import '../providers/workspace_provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/process_provider.dart';
+import '../providers/settings_provider.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/chat_area.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +18,21 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _sidebarOpen = false;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    if (_initialized) return;
+    _initialized = true;
+
+    // Initialize process controller (sets up rootfs)
+    await ref.read(processProvider.notifier).initialize();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,11 +104,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ),
           ),
-          if (processState.isRunning)
+          if (processState.isStarting)
             const SizedBox(
               width: 16,
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          if (processState.isRunning)
+            const SizedBox(
+              width: 8,
+              height: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: TccColors.success,
+                  shape: BoxShape.circle,
+                ),
+              ),
             ),
           const SizedBox(width: 8),
           IconButton(
@@ -99,6 +127,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: processState.isRunning
                 ? () => ref.read(processProvider.notifier).kill()
                 : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => _openSettings(),
           ),
         ],
       ),
@@ -124,5 +156,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       process.sendInput(text);
     }
+  }
+
+  void _openSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => SettingsScreen(
+          scrollController: scrollController,
+        ),
+      ),
+    );
   }
 }

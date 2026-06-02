@@ -3,40 +3,96 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../models/workspace_state.dart';
 import '../providers/model_provider.dart';
+import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  final ScrollController? scrollController;
+
+  const SettingsScreen({super.key, this.scrollController});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final models = ref.watch(modelProvider);
+    final settings = ref.watch(settingsProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
+    return Container(
+      decoration: const BoxDecoration(
+        color: TccColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          _buildHandle(),
+          _buildHeader(context),
+          Expanded(
+            child: ListView(
+              controller: scrollController,
+              children: [
+                _buildSection('Models', [
+                  for (final model in models)
+                    _buildModelTile(context, ref, model),
+                  _buildAddModelButton(context, ref),
+                ]),
+                const Divider(),
+                _buildSection('Global Prompt', [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter global prompt that applies to all sessions...',
+                      ),
+                      controller: TextEditingController(text: settings.globalPrompt),
+                      onChanged: (value) {
+                        ref.read(settingsProvider.notifier).updateGlobalPrompt(value);
+                      },
+                    ),
+                  ),
+                ]),
+                const Divider(),
+                _buildSection('About', [
+                  ListTile(
+                    title: const Text('TCC Version'),
+                    subtitle: const Text('1.0.0'),
+                  ),
+                  ListTile(
+                    title: const Text('Claude Code Version'),
+                    subtitle: const Text('2.1.153 (bundled)'),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHandle() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 12),
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: TccColors.onSurfaceVariant,
+          borderRadius: BorderRadius.circular(2),
         ),
       ),
-      body: ListView(
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Row(
         children: [
-          _buildSection('Models', [
-            for (final model in models)
-              _buildModelTile(context, ref, model),
-            _buildAddModelButton(context, ref),
-          ]),
-          const Divider(),
-          _buildSection('About', [
-            ListTile(
-              title: const Text('TCC Version'),
-              subtitle: const Text('1.0.0'),
-            ),
-            ListTile(
-              title: const Text('Claude Code Version'),
-              subtitle: const Text('2.1.153'),
-            ),
-          ]),
+          const Text('Settings', style: TccTextStyles.titleLarge),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.pop(context),
+          ),
         ],
       ),
     );

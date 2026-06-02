@@ -36,7 +36,9 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -44,6 +46,10 @@ android {
         variant.outputs.all { output ->
             outputFileName = "TCC.apk"
         }
+    }
+
+    aaptOptions {
+        noCompress 'tgz', 'tar', 'so'
     }
 }
 

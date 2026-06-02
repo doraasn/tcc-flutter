@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import '../core/constants.dart';
 
@@ -7,7 +8,48 @@ class PRootService {
   static const _alpineArch = 'aarch64';
   static const _alpineUrl = 'https://dl-cdn.alpinelinux.org/alpine/v$_alpineVersion/releases/$_alpineArch/alpine-minirootfs-$_alpineVersion.0-$_alpineArch.tar.gz';
 
-  Future<void> initializeRootfs() async {
+  bool _initialized = false;
+
+  Future<void> initialize() async {
+    if (_initialized) return;
+
+    final rootfs = await TccPaths.rootfs;
+    final rootfsDir = Directory(rootfs);
+
+    if (!await rootfsDir.exists()) {
+      await _extractRootfsFromAssets(rootfs);
+    }
+
+    _initialized = true;
+  }
+
+  Future<void> _extractRootfsFromAssets(String rootfs) async {
+    try {
+      final byteData = await rootBundle.load('assets/core/rootfs.tgz');
+      final bytes = byteData.buffer.asUint8List();
+
+      final tmpDir = Directory.systemTemp.createTempSync('tcc_rootfs_');
+      final tarball = File(p.join(tmpDir.path, 'rootfs.tgz'));
+
+      await tarball.writeAsBytes(bytes);
+
+      final result = await Process.run('tar', [
+        'xzf', tarball.path,
+        '-C', rootfs,
+        '--strip-components=0',
+      ]);
+
+      await tmpDir.delete(recursive: true);
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to extract rootfs: ${result.stderr}');
+      }
+    } catch (e) {
+      throw Exception('Failed to initialize rootfs: $e');
+    }
+  }
+
+  Future<void> downloadAndExtractRootfs() async {
     final rootfs = await TccPaths.rootfs;
     final rootfsDir = Directory(rootfs);
 
@@ -15,12 +57,6 @@ class PRootService {
       return;
     }
 
-    await _downloadAndExtractRootfs(rootfs);
-    await _installNodeJs(rootfs);
-    await _installClaudeCode(rootfs);
-  }
-
-  Future<void> _downloadAndExtractRootfs(String rootfs) async {
     final tmpDir = Directory.systemTemp.createTempSync('tcc_rootfs_');
     final tarball = File(p.join(tmpDir.path, 'rootfs.tar.gz'));
 
@@ -40,34 +76,12 @@ class PRootService {
         throw Exception('Failed to extract rootfs: ${result.stderr}');
       }
     } finally {
-      tmpDir.deleteSync(recursive: true);
+      await tmpDir.delete(recursive: true);
     }
   }
 
-  Future<void> _installNodeJs(String rootfs) async {
-    final result = await _runInRootfs('apk add --no-cache nodejs npm');
-    if (result.exitCode != 0) {
-      throw Exception('Failed to install Node.js: ${result.stderr}');
-    }
-  }
-
-  Future<void> _installClaudeCode(String rootfs) async {
-    final versionDir = await TccPaths.currentVersion;
-    final claudeDir = Directory(versionDir);
-    if (!await claudeDir.exists()) {
-      await claudeDir.create(recursive: true);
-    }
-
-    final result = await _runInRootfs(
-      'npm install -g @anthropic-ai/claude-code@2.1.153 --prefix $versionDir',
-    );
-    if (result.exitCode != 0) {
-      throw Exception('Failed to install Claude Code: ${result.stderr}');
-    }
-  }
-
-  Future<ProcessResult> _runInRootfs(String command) async {
-    final proot = await _findProot();
+  Future<ProcessResult> runInRootfs(String command) async {
+    final proot = await findProot();
     final rootfs = await TccPaths.rootfs;
 
     return await Process.run(proot, [
@@ -80,16 +94,23 @@ class PRootService {
     ]);
   }
 
-  Future<String> _findProot() async {
-    final prootPaths = [
-      '/data/data/com.termux/files/usr/bin/proot',
-      '/system/bin/proot',
-    ];
+  Future<String> findProot() async {
+    // Check app's internal storage first (extracted from APK)
+    final appProot = File('${await TccPaths.root}/../proot');
+    if (await appProot.exists()) {
+      return appProot.path;
+    }
 
-    for (final path in prootPaths) {
-      if (await File(path).exists()) {
-        return path;
-      }
+    // Check Termux's proot
+    const termuxProot = '/data/data/com.termux/files/usr/bin/proot';
+    if (await File(termuxProot).exists()) {
+      return termuxProot;
+    }
+
+    // Check system proot
+    const systemProot = '/system/bin/proot';
+    if (await File(systemProot).exists()) {
+      return systemProot;
     }
 
     throw Exception('proot not found. Install with: pkg install proot');

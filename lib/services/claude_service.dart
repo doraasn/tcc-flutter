@@ -23,14 +23,15 @@ class ClaudeService {
   }) async {
     await kill();
 
+    final proot = await _prootService.findProot();
     final rootfs = await TccPaths.rootfs;
-    final proot = await _prootService._findProot();
 
     final args = [
       '-r', rootfs,
       '-b', '/dev',
       '-b', '/proc',
       '-b', '/sys',
+      '-b', '/data/data/com.tcc.app/files/workspace:/root/workspace',
       '-w', '/root',
       '/root/.tcc/versions/current/bin/claude',
       '--output-format', 'stream-json',
@@ -90,9 +91,13 @@ class ClaudeService {
     env['USER'] = 'root';
     env['TERM'] = 'xterm-256color';
     env['SHELL'] = '/bin/bash';
-    env['PATH'] = '$rootfs/root/.tcc/versions/current/bin:$rootfs/usr/bin:$rootfs/bin:/usr/local/bin:/usr/bin:/bin';
-    env['LD_LIBRARY_PATH'] = '$rootfs/usr/lib:$rootfs/lib';
-    env['NODE_PATH'] = '$rootfs/root/.tcc/versions/current/lib/node_modules';
+    env['PATH'] = '/root/.tcc/versions/current/bin:/usr/bin:/bin:/usr/local/bin';
+    env['LD_LIBRARY_PATH'] = '/usr/lib:/lib';
+    env['NODE_PATH'] = '/root/.tcc/versions/current/lib/node_modules';
+
+    // TCC specific
+    env['TCC_VERSION'] = '1.0.0';
+    env['TCC_WORKSPACE'] = '/root/workspace';
 
     if (extra != null) {
       env.addAll(extra);
