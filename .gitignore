@@ -1,0 +1,29 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+android/.gradle/
+android/app/build/
+android/local.properties
+android/*.jks
+android/*.keystore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Generated
+*.g.dart
+*.freezed.dart
+
+# Temporary
+*.tmp
+*.bak
