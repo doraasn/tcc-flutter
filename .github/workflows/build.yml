@@ -106,16 +106,13 @@ jobs:
           echo "127.0.0.1 localhost" > "$ROOTFS_DIR/etc/hosts"
           echo "tcc" > "$ROOTFS_DIR/etc/hostname"
 
-          # Download proot for x86_64 (doesn't need root, unlike chroot)
-          echo "Downloading proot..."
-          curl -sL "https://proot.gitlab.io/proot/bin/proot" -o /tmp/proot
-          chmod +x /tmp/proot
-
-          PROOT="/tmp/proot -R $ROOTFS_DIR -b /dev -b /proc -b /sys -w /root"
-
-          # Install Node.js and npm inside aarch64 rootfs via proot
+          # Use qemu-aarch64-static directly as the ELF interpreter
+          # This works without root because binfmt-support registered it
           echo "Installing Node.js..."
-          $PROOT /bin/sh -c "
+          "$ROOTFS_DIR/usr/bin/qemu-aarch64-static" "$ROOTFS_DIR/bin/sh" -c "
+            export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            export HOME=/root
+            export TERM=xterm-256color
             apk update && apk add --no-cache nodejs npm bash
           "
 
@@ -125,7 +122,10 @@ jobs:
 
           # Install Claude Code
           echo "Installing Claude Code v${{ env.CLAUDE_VERSION }}..."
-          $PROOT /bin/sh -c "
+          "$ROOTFS_DIR/usr/bin/qemu-aarch64-static" "$ROOTFS_DIR/bin/sh" -c "
+            export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            export HOME=/root
+            export TERM=xterm-256color
             npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_VERSION }} --prefix /root/.tcc/versions/v${{ env.CLAUDE_VERSION }}
           "
 
@@ -138,7 +138,10 @@ jobs:
           echo "Verifying rootfs..."
           ls -la "$ROOTFS_DIR/bin/sh"
           ls -la "$ROOTFS_DIR/root/.tcc/versions/current/"
-          $PROOT /bin/sh -c "node --version && npm --version"
+          "$ROOTFS_DIR/usr/bin/qemu-aarch64-static" "$ROOTFS_DIR/bin/sh" -c "
+            export PATH=/root/.tcc/versions/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            node --version && npm --version
+          "
 
           # Remove qemu binary from rootfs (not needed at runtime, proot handles it)
           rm -f "$ROOTFS_DIR/usr/bin/qemu-aarch64-static"
