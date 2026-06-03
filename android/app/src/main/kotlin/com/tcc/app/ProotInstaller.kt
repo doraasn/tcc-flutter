@@ -53,15 +53,13 @@ object ProotInstaller {
         if (prootFile.exists()) return prootFile
 
         try {
-            val nativeLibDir = context.nativeLibraryDir
-            val sourceFile = File(nativeLibDir, PROOT_LIB_NAME)
-            if (sourceFile.exists()) {
-                sourceFile.copyTo(prootFile, overwrite = true)
-                prootFile.setExecutable(true)
-                return prootFile
-            }
+            // Try to extract from assets
+            val inputStream = context.assets.open("core/$PROOT_LIB_NAME")
+            FileOutputStream(prootFile).use { output -> inputStream.copyTo(output) }
+            prootFile.setExecutable(true)
+            return prootFile
         } catch (e: IOException) {
-            Log.e(TAG, "Failed to extract proot", e)
+            Log.e(TAG, "Failed to extract proot from assets", e)
         }
         return null
     }
