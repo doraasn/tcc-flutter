@@ -32,13 +32,18 @@ class ProcessController extends StateNotifier<ProcessState> {
   StreamSubscription<NdjsonChunk>? _parserSub;
   Process? _process;
   StreamSubscription<String>? _stdoutSub;
+  StreamSubscription<String>? _stderrSub;
   IOSink? _stdinSink;
+
+  DebugLogController get _log => _ref.read(debugLogProvider.notifier);
 
   bool get isRunning => state.isRunning;
 
   /// One-time initialisation (extracts rootfs if needed).
   Future<void> initialize() async {
+    _log.info('Initializing PRoot service...');
     await _prootService.initialize();
+    _log.info('PRoot service initialized.');
   }
 
   // ---------------------------------------------------------------------------
@@ -64,10 +69,18 @@ class ProcessController extends StateNotifier<ProcessState> {
     state = const ProcessState(isStarting: true);
     _parser = NdjsonParser();
 
+    _log.info('Starting process for project: $projectId');
+    _log.info('Working directory: $cwd');
+    if (resumeId != null) _log.info('Resuming session: $resumeId');
+    if (prompt != null) _log.info('Prompt: ${prompt.length > 100 ? "${prompt.substring(0, 100)}..." : prompt}');
+
     try {
       await _prootService.initialize();
       final proot = await _prootService.findProot();
       final rootfs = await TccPaths.rootfs;
+
+      _log.info('proot binary: $proot');
+      _log.info('rootfs: $rootfs');
 
       final args = <String>[
         '-r', rootfs,
@@ -91,6 +104,7 @@ class ProcessController extends StateNotifier<ProcessState> {
       }
 
       final environment = await _buildEnvironment(env);
+      _log.info('Launching: $proot ${args.join(" ")}');
 
       _process = await Process.start(
         proot,
@@ -98,6 +112,8 @@ class ProcessController extends StateNotifier<ProcessState> {
         workingDirectory: cwd,
         environment: environment,
       );
+
+      _log.info('Process started, PID: ${_process!.pid}');
 
       _stdinSink = _process!.stdin;
 
@@ -107,8 +123,13 @@ class ProcessController extends StateNotifier<ProcessState> {
 
       _parserSub = _parser!.stream.listen(_onChunk);
 
-      // stderr is intentionally not consumed to avoid blocking the process
-      _process!.stderr.drain<void>();
+      // Capture stderr for debugging
+      _stderrSub = _process!.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen((line) {
+        _log.stderr(line);
+      });
 
       _process!.exitCode.then(_onExit);
 
@@ -116,7 +137,9 @@ class ProcessController extends StateNotifier<ProcessState> {
         isRunning: true,
         sessionId: resumeId,
       );
-    } catch (e) {
+    } catch (e, st) {
+      _log.error('Failed to start: $e');
+      _log.error('$st');
       state = ProcessState(error: e.toString());
     }
   }
@@ -127,6 +150,9 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   /// Feeds raw UTF-8 text into the NDJSON parser which handles partial lines.
   void _onData(String data) {
+    // Log raw stdout for debugging (truncate long lines)
+    final preview = data.length > 200 ? '${data.substring(0, 200)}...' : data;
+    _log.stdout(preview);
     _parser?.feed(data);
   }
 
@@ -231,6 +257,7 @@ class ProcessController extends StateNotifier<ProcessState> {
   }
 
   void _onExit(int code) {
+    _log.info('Process exited with code: $code');
     if (isRunning) {
       // Mark the last streaming message as finalised.
       final messages = _readMessages();
@@ -252,7 +279,12 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   /// Send a line of text to the running Claude process via stdin.
   Future<void> sendInput(String text) async {
-    if (!isRunning || _stdinSink == null) return;
+    if (!isRunning || _stdinSink == null) {
+      _log.error('sendInput called but process not running');
+      return;
+    }
+
+    _log.info('Sending input: ${text.length > 100 ? "${text.substring(0, 100)}..." : text}');
 
     // Record the user message in chat.
     final messages = _readMessages();
@@ -272,6 +304,7 @@ class ProcessController extends StateNotifier<ProcessState> {
   // ---------------------------------------------------------------------------
 
   void kill() {
+    _log.info('Killing process...');
     _process?.kill(ProcessSignal.sigterm);
     _cleanupStreams();
     _parser?.close();
@@ -288,8 +321,10 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   void _cleanupStreams() {
     _stdoutSub?.cancel();
+    _stderrSub?.cancel();
     _parserSub?.cancel();
     _stdoutSub = null;
+    _stderrSub = null;
     _parserSub = null;
   }
 
@@ -369,3 +404,46 @@ class ProcessController extends StateNotifier<ProcessState> {
 
 /// The raw chat message list that the process writes into.
 final chatMessagesProvider = StateProvider<List<ChatMessage>>((ref) => []);
+
+/// ---------------------------------------------------------------------------
+/// Debug log
+// ---------------------------------------------------------------------------
+
+/// A simple log entry for the debug panel.
+class LogEntry {
+  final DateTime time;
+  final String level; // INFO, ERROR, STDOUT, STDERR
+  final String message;
+  LogEntry(this.level, this.message) : time = DateTime.now();
+  @override
+  String toString() =>
+      '${time.hour.toString().padLeft(2, '0')}:'
+      '${time.minute.toString().padLeft(2, '0')}:'
+      '${time.second.toString().padLeft(2, '0')} '
+      '[$level] $message';
+}
+
+/// Global log buffer accessible from anywhere.
+final debugLogProvider =
+    StateNotifierProvider<DebugLogController, List<LogEntry>>((ref) {
+  return DebugLogController();
+});
+
+class DebugLogController extends StateNotifier<List<LogEntry>> {
+  DebugLogController() : super([]);
+  static const _maxLines = 200;
+
+  void info(String msg) => _add('INFO', msg);
+  void error(String msg) => _add('ERROR', msg);
+  void stdout(String msg) => _add('STDOUT', msg);
+  void stderr(String msg) => _add('STDERR', msg);
+
+  void _add(String level, String msg) {
+    state = [...state, LogEntry(level, msg)];
+    if (state.length > _maxLines) {
+      state = state.sublist(state.length - _maxLines);
+    }
+  }
+
+  void clear() => state = [];
+}

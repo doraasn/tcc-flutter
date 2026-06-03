@@ -12,6 +12,7 @@ import '../widgets/chat_area.dart';
 import '../widgets/project_picker.dart';
 import '../widgets/command_palette.dart';
 import '../widgets/opsx_bar.dart';
+import '../widgets/log_panel.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -25,6 +26,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _sidebarOpen = false;
   bool _initialized = false;
   bool _commandPaletteOpen = false;
+  bool _logPanelOpen = false;
 
   @override
   void initState() {
@@ -124,6 +126,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onOpenSettings: _openSettings,
                       ),
                     ),
+                    if (_logPanelOpen)
+                      const SizedBox(
+                        height: 200,
+                        child: LogPanel(),
+                      ),
                   ],
                 ),
               ),
@@ -199,6 +206,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             tooltip: AppStrings.stopProcess,
           ),
           IconButton(
+            icon: Icon(
+              Icons.bug_report,
+              color: _logPanelOpen ? TccColors.primary : TccColors.onSurfaceVariant,
+            ),
+            onPressed: () => setState(() => _logPanelOpen = !_logPanelOpen),
+            tooltip: '调试日志',
+          ),
+          IconButton(
             icon: const Icon(Icons.folder_open, color: TccColors.onSurfaceVariant),
             onPressed: () => ProjectPicker.show(context),
             tooltip: AppStrings.projects,
@@ -255,13 +270,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _handleSendMessage(String text) {
+    final log = ref.read(debugLogProvider.notifier);
+    log.info('handleSendMessage: "${text.length > 50 ? "${text.substring(0, 50)}..." : text}"');
+
     if (text.startsWith('/clear')) {
       ref.read(processProvider.notifier).clearSession();
+      log.info('Session cleared');
       return;
     }
 
     final workspace = ref.read(workspaceProvider);
+    log.info('Workspace: projectId=${workspace.projectId}, cwd=${workspace.cwd}');
+
     if (workspace.projectId.isEmpty) {
+      log.error('No project selected, showing snackbar');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请先创建一个项目')),
       );
@@ -269,13 +291,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     final process = ref.read(processProvider.notifier);
+    log.info('Process running: ${process.isRunning}');
+
     if (!process.isRunning) {
+      log.info('Starting new process...');
       process.start(
         projectId: workspace.projectId,
         cwd: workspace.cwd,
         prompt: text,
       );
     } else {
+      log.info('Sending to existing process...');
       process.sendInput(text);
     }
   }
