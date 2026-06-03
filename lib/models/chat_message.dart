@@ -1,51 +1,90 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class ChatMessage {
+  final String id;
+  final String role;
+  final String content;
+  final DateTime timestamp;
+  final bool isStreaming;
+  final String? error;
+  final Map<String, dynamic>? metadata;
 
-part 'chat_message.freezed.dart';
-part 'chat_message.g.dart';
+  const ChatMessage({
+    required this.id,
+    required this.role,
+    required this.content,
+    required this.timestamp,
+    this.isStreaming = false,
+    this.error,
+    this.metadata,
+  });
 
-/// Roles a message can take in the chat.
-enum MessageRole {
-  user,
-  assistant,
-  system,
-  error,
-}
-
-@freezed
-class ChatMessage with _$ChatMessage {
-  const factory ChatMessage({
-    required String id,
-    required String role,
-    required String content,
-    required DateTime timestamp,
-    @Default(false) bool isStreaming,
-    String? error,
-    @Default({}) Map<String, dynamic>? metadata,
-  }) = _ChatMessage;
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) =>
-      _$ChatMessageFromJson(json);
-
-  /// Convenience getters that parse the role string.
   bool get isUser => role == 'user';
   bool get isAssistant => role == 'assistant';
   bool get isSystem => role == 'system';
   bool get isError => role == 'error';
+
+  ChatMessage copyWith({
+    String? id,
+    String? role,
+    String? content,
+    DateTime? timestamp,
+    bool? isStreaming,
+    String? error,
+    Map<String, dynamic>? metadata,
+  }) {
+    return ChatMessage(
+      id: id ?? this.id,
+      role: role ?? this.role,
+      content: content ?? this.content,
+      timestamp: timestamp ?? this.timestamp,
+      isStreaming: isStreaming ?? this.isStreaming,
+      error: error ?? this.error,
+      metadata: metadata ?? this.metadata,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'role': role,
+    'content': content,
+    'timestamp': timestamp.toIso8601String(),
+    'isStreaming': isStreaming,
+    'error': error,
+    'metadata': metadata,
+  };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      id: json['id'] ?? '',
+      role: json['role'] ?? '',
+      content: json['content'] ?? '',
+      timestamp: DateTime.parse(json['timestamp']),
+      isStreaming: json['isStreaming'] ?? false,
+      error: json['error'],
+      metadata: json['metadata'],
+    );
+  }
 }
 
-@freezed
-class SlashCommand with _$SlashCommand {
-  const factory SlashCommand({
-    required String name,
-    required String description,
-    String? category,
-  }) = _SlashCommand;
+class SlashCommand {
+  final String name;
+  final String description;
+  final String category;
 
-  factory SlashCommand.fromJson(Map<String, dynamic> json) =>
-      _$SlashCommandFromJson(json);
+  const SlashCommand({
+    required this.name,
+    required this.description,
+    this.category = '',
+  });
+
+  factory SlashCommand.fromJson(Map<String, dynamic> json) {
+    return SlashCommand(
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      category: json['category'] ?? '',
+    );
+  }
 }
 
-/// Built-in slash commands available in the chat.
 class SlashCommands {
   SlashCommands._();
 
@@ -64,7 +103,6 @@ class SlashCommands {
     SlashCommand(name: 'compact', description: 'Compact conversation context', category: 'session'),
   ];
 
-  /// Parse a slash command from user input. Returns null if input is not a command.
   static SlashCommand? parse(String input) {
     final trimmed = input.trim();
     if (!trimmed.startsWith('/')) return null;

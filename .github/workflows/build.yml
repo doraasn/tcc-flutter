@@ -76,14 +76,8 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Run code generation
-        run: |
-          flutter pub run build_runner build --delete-conflicting-outputs || {
-            echo "Code generation failed, trying with --build-filter..."
-            flutter pub run build_runner build --delete-conflicting-outputs --build-filter="lib/models/*.dart" || {
-              echo "Code generation skipped - using pre-generated files if available"
-            }
-          }
+      - name: Skip code generation (using plain Dart classes)
+        run: echo "Code generation not needed - using plain Dart classes without freezed"
 
       - name: Build release APK
         run: |

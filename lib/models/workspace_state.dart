@@ -1,62 +1,195 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class WorkspaceState {
+  final String projectId;
+  final String projectName;
+  final String cwd;
+  final List<String> openSpecSkills;
+  final int createdAt;
 
-part 'workspace_state.freezed.dart';
-part 'workspace_state.g.dart';
+  const WorkspaceState({
+    this.projectId = '',
+    this.projectName = '',
+    this.cwd = '',
+    this.openSpecSkills = const [],
+    this.createdAt = 0,
+  });
 
-@freezed
-class WorkspaceState with _$WorkspaceState {
-  const factory WorkspaceState({
-    @Default('') String projectId,
-    @Default('') String projectName,
-    @Default('') String cwd,
-    @Default([]) List<String> openSpecSkills,
-    @Default(0) int createdAt,
-  }) = _WorkspaceState;
+  WorkspaceState copyWith({
+    String? projectId,
+    String? projectName,
+    String? cwd,
+    List<String>? openSpecSkills,
+    int? createdAt,
+  }) {
+    return WorkspaceState(
+      projectId: projectId ?? this.projectId,
+      projectName: projectName ?? this.projectName,
+      cwd: cwd ?? this.cwd,
+      openSpecSkills: openSpecSkills ?? this.openSpecSkills,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 
-  factory WorkspaceState.fromJson(Map<String, dynamic> json) =>
-      _$WorkspaceStateFromJson(json);
+  Map<String, dynamic> toJson() => {
+    'projectId': projectId,
+    'projectName': projectName,
+    'cwd': cwd,
+    'openSpecSkills': openSpecSkills,
+    'createdAt': createdAt,
+  };
+
+  factory WorkspaceState.fromJson(Map<String, dynamic> json) {
+    return WorkspaceState(
+      projectId: json['projectId'] ?? '',
+      projectName: json['projectName'] ?? '',
+      cwd: json['cwd'] ?? '',
+      openSpecSkills: List<String>.from(json['openSpecSkills'] ?? []),
+      createdAt: json['createdAt'] ?? 0,
+    );
+  }
 }
 
-@freezed
-class ProcessState with _$ProcessState {
-  const factory ProcessState({
-    @Default(false) bool isRunning,
-    @Default(false) bool isStarting,
+class ProcessState {
+  final bool isRunning;
+  final bool isStarting;
+  final String? sessionId;
+  final String? error;
+  final List<String> outputBuffer;
+
+  const ProcessState({
+    this.isRunning = false,
+    this.isStarting = false,
+    this.sessionId,
+    this.error,
+    this.outputBuffer = const [],
+  });
+
+  ProcessState copyWith({
+    bool? isRunning,
+    bool? isStarting,
     String? sessionId,
     String? error,
-    @Default([]) List<String> outputBuffer,
-  }) = _ProcessState;
+    List<String>? outputBuffer,
+  }) {
+    return ProcessState(
+      isRunning: isRunning ?? this.isRunning,
+      isStarting: isStarting ?? this.isStarting,
+      sessionId: sessionId ?? this.sessionId,
+      error: error ?? this.error,
+      outputBuffer: outputBuffer ?? this.outputBuffer,
+    );
+  }
 
-  factory ProcessState.fromJson(Map<String, dynamic> json) =>
-      _$ProcessStateFromJson(json);
+  Map<String, dynamic> toJson() => {
+    'isRunning': isRunning,
+    'isStarting': isStarting,
+    'sessionId': sessionId,
+    'error': error,
+    'outputBuffer': outputBuffer,
+  };
+
+  factory ProcessState.fromJson(Map<String, dynamic> json) {
+    return ProcessState(
+      isRunning: json['isRunning'] ?? false,
+      isStarting: json['isStarting'] ?? false,
+      sessionId: json['sessionId'],
+      error: json['error'],
+      outputBuffer: List<String>.from(json['outputBuffer'] ?? []),
+    );
+  }
 }
 
-@freezed
-class SessionInfo with _$SessionInfo {
-  const factory SessionInfo({
-    required String id,
-    required String title,
-    required DateTime createdAt,
-    required String projectId,
-    @Default('') String lastMessage,
-  }) = _SessionInfo;
+class SessionInfo {
+  final String id;
+  final String title;
+  final DateTime createdAt;
+  final String projectId;
+  final String lastMessage;
 
-  factory SessionInfo.fromJson(Map<String, dynamic> json) =>
-      _$SessionInfoFromJson(json);
+  const SessionInfo({
+    required this.id,
+    required this.title,
+    required this.createdAt,
+    required this.projectId,
+    this.lastMessage = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'createdAt': createdAt.toIso8601String(),
+    'projectId': projectId,
+    'lastMessage': lastMessage,
+  };
+
+  factory SessionInfo.fromJson(Map<String, dynamic> json) {
+    return SessionInfo(
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      createdAt: DateTime.parse(json['createdAt']),
+      projectId: json['projectId'] ?? '',
+      lastMessage: json['lastMessage'] ?? '',
+    );
+  }
 }
 
-@freezed
-class ModelConfig with _$ModelConfig {
-  const factory ModelConfig({
-    required String id,
-    required String name,
-    required String baseUrl,
-    required String apiKey,
-    required String modelId,
-    @Default(200000) int contextLength,
-    @Default(false) bool isActive,
-  }) = _ModelConfig;
+class ModelConfig {
+  final String id;
+  final String name;
+  final String baseUrl;
+  final String apiKey;
+  final String modelId;
+  final int contextLength;
+  final bool isActive;
 
-  factory ModelConfig.fromJson(Map<String, dynamic> json) =>
-      _$ModelConfigFromJson(json);
+  const ModelConfig({
+    required this.id,
+    required this.name,
+    required this.baseUrl,
+    required this.apiKey,
+    required this.modelId,
+    this.contextLength = 200000,
+    this.isActive = false,
+  });
+
+  ModelConfig copyWith({
+    String? id,
+    String? name,
+    String? baseUrl,
+    String? apiKey,
+    String? modelId,
+    int? contextLength,
+    bool? isActive,
+  }) {
+    return ModelConfig(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      baseUrl: baseUrl ?? this.baseUrl,
+      apiKey: apiKey ?? this.apiKey,
+      modelId: modelId ?? this.modelId,
+      contextLength: contextLength ?? this.contextLength,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'baseUrl': baseUrl,
+    'apiKey': apiKey,
+    'modelId': modelId,
+    'contextLength': contextLength,
+    'isActive': isActive,
+  };
+
+  factory ModelConfig.fromJson(Map<String, dynamic> json) {
+    return ModelConfig(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      baseUrl: json['baseUrl'] ?? '',
+      apiKey: json['apiKey'] ?? '',
+      modelId: json['modelId'] ?? '',
+      contextLength: json['contextLength'] ?? 200000,
+      isActive: json['isActive'] ?? false,
+    );
+  }
 }
