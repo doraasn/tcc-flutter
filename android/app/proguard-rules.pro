@@ -9,9 +9,6 @@
 # TCC native code
 -keep class com.tcc.app.** { *; }
 
-# Keep ProotInstaller data classes (used with reflection by Kotlin)
--keep class com.tcc.app.ProotInstaller$InstallResult { *; }
-
 # Don't warn about missing annotations
 -dontwarn javax.annotation.**
 -dontwarn org.codehaus.mojo.animal_sniffer.**
