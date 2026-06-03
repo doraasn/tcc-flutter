@@ -56,20 +56,6 @@ class McpServer {
     return map;
   }
 
-  McpServer copyWith({
-    String? name,
-    String? command,
-    List<String>? args,
-    Map<String, String>? env,
-  }) {
-    return McpServer(
-      name: name ?? this.name,
-      command: command ?? this.command,
-      args: args ?? this.args,
-      env: env ?? this.env,
-    );
-  }
-
   @override
   String toString() => 'McpServer(name=$name, command=$command)';
 }
@@ -145,16 +131,6 @@ class McpManager {
     }).whereType<McpServer>().toList();
   }
 
-  /// Returns a single server by name, or `null` if not found.
-  Future<McpServer?> getServer(String name) async {
-    final servers = await listServers();
-    try {
-      return servers.firstWhere((s) => s.name == name);
-    } catch (_) {
-      return null;
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Write
   // ---------------------------------------------------------------------------
@@ -197,51 +173,6 @@ class McpManager {
   // ---------------------------------------------------------------------------
   // Validation
   // ---------------------------------------------------------------------------
-
-  /// Validates the full config file structure.
-  ///
-  /// Returns a list of error strings.  An empty list means the config is valid.
-  List<String> validateConfig(Map<String, dynamic> config) {
-    final errors = <String>[];
-
-    final servers = config['mcpServers'];
-    if (servers == null) {
-      errors.add('Missing "mcpServers" key');
-      return errors;
-    }
-
-    if (servers is! Map<String, dynamic>) {
-      errors.add('"mcpServers" must be an object');
-      return errors;
-    }
-
-    for (final entry in servers.entries) {
-      final name = entry.key;
-      final value = entry.value;
-
-      if (value is! Map<String, dynamic>) {
-        errors.add('Server "$name": entry must be an object');
-        continue;
-      }
-
-      final command = value['command'] as String?;
-      if (command == null || command.trim().isEmpty) {
-        errors.add('Server "$name": missing or empty "command"');
-      }
-
-      final args = value['args'];
-      if (args != null && args is! List) {
-        errors.add('Server "$name": "args" must be an array');
-      }
-
-      final env = value['env'];
-      if (env != null && env is! Map) {
-        errors.add('Server "$name": "env" must be an object');
-      }
-    }
-
-    return errors;
-  }
 
   /// Validates a single server configuration.
   void _validateServer(McpServer server) {

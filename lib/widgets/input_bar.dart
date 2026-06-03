@@ -9,14 +9,10 @@ import 'command_palette.dart';
 
 class InputBar extends ConsumerStatefulWidget {
   final Function(String) onSend;
-  final ValueChanged<bool>? onCommandPaletteToggle;
-  final String? commandQuery;
 
   const InputBar({
     super.key,
     required this.onSend,
-    this.onCommandPaletteToggle,
-    this.commandQuery,
   });
 
   @override

@@ -49,12 +49,6 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     return (box.get('list', defaultValue: []) as List).cast<String>();
   }
 
-  /// Whether the current project has an openspec directory.
-  bool get hasOpenspec => state.openSpecSkills.isNotEmpty;
-
-  /// The directory that contains session JSONL files.
-  Future<String> get sessionsDir => TccPaths.sessionsDir;
-
   // ---------------------------------------------------------------------------
   // CRUD
   // ---------------------------------------------------------------------------
@@ -99,31 +93,6 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       } else {
         state = const WorkspaceState();
       }
-    }
-  }
-
-  /// Rename an existing project.
-  Future<void> renameProject(String oldId, String newId) async {
-    final trimmed = newId.trim();
-    if (trimmed.isEmpty || trimmed == oldId) return;
-
-    final oldDir = Directory(await TccPaths.projectDir(oldId));
-    final newDirPath = await TccPaths.projectDir(trimmed);
-
-    if (await oldDir.exists()) {
-      await oldDir.rename(newDirPath);
-    }
-
-    final box = Hive.box('projects');
-    final list = (box.get('list', defaultValue: []) as List).cast<String>();
-    final idx = list.indexOf(oldId);
-    if (idx != -1) {
-      list[idx] = trimmed;
-      await box.put('list', list);
-    }
-
-    if (state.projectId == oldId) {
-      await switchProject(trimmed);
     }
   }
 

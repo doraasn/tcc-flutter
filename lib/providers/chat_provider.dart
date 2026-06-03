@@ -18,20 +18,9 @@ final chatProvider =
   return ChatController(ref);
 });
 
-/// Total number of messages in the current chat.
-final chatMessageCountProvider = Provider<int>((ref) {
-  return ref.watch(chatProvider).length;
-});
-
 /// Whether the chat currently has any messages.
 final chatHasMessagesProvider = Provider<bool>((ref) {
   return ref.watch(chatProvider).isNotEmpty;
-});
-
-/// The last message in the chat (or null).
-final chatLastMessageProvider = Provider<ChatMessage?>((ref) {
-  final messages = ref.watch(chatProvider);
-  return messages.isEmpty ? null : messages.last;
 });
 
 /// ---------------------------------------------------------------------------
@@ -75,28 +64,11 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
   // Read helpers
   // ---------------------------------------------------------------------------
 
-  /// All user-authored messages (role == 'user').
-  List<ChatMessage> get userMessages =>
-      state.where((m) => m.role == 'user').toList();
-
-  /// All assistant responses.
-  List<ChatMessage> get assistantMessages =>
-      state.where((m) => m.role == 'assistant').toList();
-
   /// Whether a streaming response is still in progress.
   bool get isStreaming =>
       state.isNotEmpty &&
       state.last.role == 'assistant' &&
       state.last.isStreaming;
-
-  /// Rough token estimate (1 token ~ 4 chars).
-  int get estimatedTokenCount {
-    var total = 0;
-    for (final m in state) {
-      total += (m.content.length / 4).ceil();
-    }
-    return total;
-  }
 
   // ---------------------------------------------------------------------------
   // Mutations
@@ -185,18 +157,6 @@ class ChatController extends StateNotifier<List<ChatMessage>> {
         metadata: details != null ? {'details': details} : null,
       ),
     ];
-    _sync();
-  }
-
-  /// Remove a single message by its [id].
-  void removeMessage(String id) {
-    state = state.where((m) => m.id != id).toList();
-    _sync();
-  }
-
-  /// Replace the entire message list (e.g. after loading from disk).
-  void replaceAll(List<ChatMessage> messages) {
-    state = List<ChatMessage>.from(messages);
     _sync();
   }
 

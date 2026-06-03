@@ -29,23 +29,6 @@ class WorkspaceState {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'projectId': projectId,
-    'projectName': projectName,
-    'cwd': cwd,
-    'openSpecSkills': openSpecSkills,
-    'createdAt': createdAt,
-  };
-
-  factory WorkspaceState.fromJson(Map<String, dynamic> json) {
-    return WorkspaceState(
-      projectId: json['projectId'] ?? '',
-      projectName: json['projectName'] ?? '',
-      cwd: json['cwd'] ?? '',
-      openSpecSkills: List<String>.from(json['openSpecSkills'] ?? []),
-      createdAt: json['createdAt'] ?? 0,
-    );
-  }
 }
 
 class ProcessState {
@@ -79,23 +62,6 @@ class ProcessState {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'isRunning': isRunning,
-    'isStarting': isStarting,
-    'sessionId': sessionId,
-    'error': error,
-    'outputBuffer': outputBuffer,
-  };
-
-  factory ProcessState.fromJson(Map<String, dynamic> json) {
-    return ProcessState(
-      isRunning: json['isRunning'] ?? false,
-      isStarting: json['isStarting'] ?? false,
-      sessionId: json['sessionId'],
-      error: json['error'],
-      outputBuffer: List<String>.from(json['outputBuffer'] ?? []),
-    );
-  }
 }
 
 class SessionInfo {
@@ -113,23 +79,6 @@ class SessionInfo {
     this.lastMessage = '',
   });
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'createdAt': createdAt.toIso8601String(),
-    'projectId': projectId,
-    'lastMessage': lastMessage,
-  };
-
-  factory SessionInfo.fromJson(Map<String, dynamic> json) {
-    return SessionInfo(
-      id: json['id'] ?? '',
-      title: json['title'] ?? '',
-      createdAt: DateTime.parse(json['createdAt']),
-      projectId: json['projectId'] ?? '',
-      lastMessage: json['lastMessage'] ?? '',
-    );
-  }
 }
 
 class ModelConfig {
@@ -171,25 +120,4 @@ class ModelConfig {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'baseUrl': baseUrl,
-    'apiKey': apiKey,
-    'modelId': modelId,
-    'contextLength': contextLength,
-    'isActive': isActive,
-  };
-
-  factory ModelConfig.fromJson(Map<String, dynamic> json) {
-    return ModelConfig(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      baseUrl: json['baseUrl'] ?? '',
-      apiKey: json['apiKey'] ?? '',
-      modelId: json['modelId'] ?? '',
-      contextLength: json['contextLength'] ?? 200000,
-      isActive: json['isActive'] ?? false,
-    );
-  }
 }

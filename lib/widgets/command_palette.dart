@@ -71,6 +71,13 @@ class CommandPalette extends StatefulWidget {
 class _CommandPaletteState extends State<CommandPalette> {
   int _selectedIndex = 0;
   final _scrollController = ScrollController();
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode()..requestFocus();
+  }
 
   List<SlashCommand> get _filteredCommands {
     if (widget.query.isEmpty) return widget.commands;
@@ -90,6 +97,7 @@ class _CommandPaletteState extends State<CommandPalette> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -136,7 +144,7 @@ class _CommandPaletteState extends State<CommandPalette> {
     }
 
     return KeyboardListener(
-      focusNode: FocusNode()..requestFocus(),
+      focusNode: _focusNode,
       onKeyEvent: _handleKey,
       child: Container(
         constraints: BoxConstraints(

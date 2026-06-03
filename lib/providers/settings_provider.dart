@@ -75,11 +75,6 @@ final settingsProvider =
   return SettingsController();
 });
 
-/// Whether the current theme is dark (convenience read).
-final isDarkThemeProvider = Provider<bool>((ref) {
-  return ref.watch(settingsProvider).theme == 'dark';
-});
-
 class SettingsController extends StateNotifier<AppSettings> {
   SettingsController() : super(const AppSettings()) {
     _loadSettings();
@@ -124,46 +119,8 @@ class SettingsController extends StateNotifier<AppSettings> {
     _save();
   }
 
-  void updateAutoConnect(bool value) {
-    state = state.copyWith(autoConnect: value);
-    _save();
-  }
-
-  void updateShowStatusBar(bool value) {
-    state = state.copyWith(showStatusBar: value);
-    _save();
-  }
-
   void updateTheme(String theme) {
     state = state.copyWith(theme: theme);
-    _save();
-  }
-
-  void toggleTheme() {
-    state = state.copyWith(
-      theme: state.theme == 'dark' ? 'light' : 'dark',
-    );
-    _save();
-  }
-
-  void updateStreamingEnabled(bool value) {
-    state = state.copyWith(streamingEnabled: value);
-    _save();
-  }
-
-  void updateCompactMode(bool value) {
-    state = state.copyWith(compactMode: value);
-    _save();
-  }
-
-  void updateMaxHistoryMessages(int value) {
-    state = state.copyWith(maxHistoryMessages: value);
-    _save();
-  }
-
-  /// Reset all settings to defaults.
-  void resetToDefaults() {
-    state = const AppSettings();
     _save();
   }
 }

@@ -5,7 +5,9 @@ import '../core/mcp_manager.dart';
 import '../core/theme.dart';
 import '../models/workspace_state.dart';
 import '../providers/model_provider.dart';
+import '../providers/process_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/workspace_provider.dart';
 import '../services/version_manager.dart';
 
 // ---------------------------------------------------------------------------
@@ -831,7 +833,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       leading: Radio<String>(
         value: model.id,
         groupValue: model.isActive ? model.id : null,
-        onChanged: (_) => ref.read(modelProvider.notifier).setActive(model.id),
+        onChanged: (_) {
+          ref.read(modelProvider.notifier).setActive(model.id);
+          // Hot-switch the running process to the newly selected model.
+          final processState = ref.read(processProvider);
+          if (processState.isRunning) {
+            final workspace = ref.read(workspaceProvider);
+            ref.read(processProvider.notifier).hotSwitch(
+              projectId: workspace.projectId,
+              cwd: workspace.cwd,
+              baseUrl: model.baseUrl,
+              apiKey: model.apiKey,
+              modelId: model.modelId,
+            );
+          }
+        },
         activeColor: TccColors.primary,
       ),
       title: Text(model.name),

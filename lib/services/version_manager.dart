@@ -170,22 +170,6 @@ class VersionManager {
     );
   }
 
-  /// Downloads a version AND switches to it in one step.
-  ///
-  /// This is the most common flow for upgrading.
-  Future<InstalledVersion> downloadAndSwitch({
-    String? versionConstraint,
-  }) async {
-    final version =
-        await downloadVersion(versionConstraint: versionConstraint);
-    await switchTo(version.path);
-    return InstalledVersion(
-      name: version.name,
-      path: version.path,
-      isActive: true,
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Switching
   // ---------------------------------------------------------------------------
@@ -234,14 +218,6 @@ class VersionManager {
         'Failed to activate version: ${mvResult.stderr}',
       );
     }
-  }
-
-  /// Convenience: switch to a version by its directory name (e.g.
-  /// `claude-1717363200000`).
-  Future<void> switchByName(String versionName) async {
-    final versionsDir = await TccPaths.versionsDir;
-    final versionPath = p.join(versionsDir, versionName);
-    await switchTo(versionPath);
   }
 
   /// Rolls back to the previous version by switching the symlink to the

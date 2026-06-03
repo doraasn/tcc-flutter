@@ -6,7 +6,6 @@ class TccColors {
   static const surface = Color(0xFF2D2D3F);
   static const surfaceLight = Color(0xFF3D3D5C);
   static const primary = Color(0xFFF59E0B);
-  static const primaryDark = Color(0xFFD97706);
   static const onSurface = Color(0xFFE0E0E0);
   static const onSurfaceVariant = Color(0xFF9E9E9E);
   static const error = Color(0xFFEF4444);

@@ -8,7 +8,6 @@ import '../models/workspace_state.dart';
 import '../providers/workspace_provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/process_provider.dart';
-import '../providers/settings_provider.dart';
 import '../providers/chat_provider.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/chat_area.dart';
@@ -28,7 +27,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _sidebarOpen = false;
   bool _initialized = false;
   bool _commandPaletteOpen = false;
-  String _commandQuery = '';
 
   @override
   void initState() {
@@ -38,6 +36,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _registerShortcuts();
     });
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    super.dispose();
   }
 
   Future<void> _initialize() async {
@@ -97,6 +101,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ref.read(workspaceProvider.notifier).switchProject(projectId);
                     setState(() => _sidebarOpen = false);
                   },
+                  onSessionResume: (sessionId) {
+                    final ws = ref.read(workspaceProvider);
+                    ref.read(processProvider.notifier).start(
+                      projectId: ws.projectId,
+                      cwd: ws.cwd,
+                      resumeId: sessionId,
+                    );
+                    setState(() => _sidebarOpen = false);
+                  },
                 ),
               Expanded(
                 child: Column(
@@ -110,6 +123,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Expanded(
                       child: ChatArea(
                         onSendMessage: _handleSendMessage,
+                        onOpenSettings: _openSettings,
                       ),
                     ),
                   ],
@@ -227,7 +241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onTap: () {}, // Prevent tap from closing
             child: CommandPalette(
               commands: CommandPalette.defaultCommands,
-              query: _commandQuery,
+              query: '',
               onSelected: (command) {
                 setState(() => _commandPaletteOpen = false);
                 _handleSendMessage(command);
@@ -266,7 +280,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _toggleCommandPalette() {
     setState(() {
       _commandPaletteOpen = !_commandPaletteOpen;
-      _commandQuery = '';
     });
   }
 

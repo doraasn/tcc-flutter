@@ -37,14 +37,6 @@ class TccPaths {
   static Future<String> get prootBinary async =>
       p.join(await root, 'proot');
 
-  /// Path to resolv.conf inside rootfs.
-  static Future<String> get resolvConf async =>
-      p.join(await rootfs, 'etc', 'resolv.conf');
-
-  /// Path to /etc/hosts inside rootfs.
-  static Future<String> get hostsFile async =>
-      p.join(await rootfs, 'etc', 'hosts');
-
   /// Rootfs assets archive bundled in the APK.
   static const String rootfsAsset = 'assets/core/rootfs.tgz';
 
@@ -83,14 +75,6 @@ class TccPaths {
   /// The Node.js binary shipped with the active version.
   static Future<String> get nodeBinary async =>
       p.join(await currentVersion, 'bin', 'node');
-
-  /// The npm binary shipped with the active version.
-  static Future<String> get npmBinary async =>
-      p.join(await currentVersion, 'bin', 'npm');
-
-  /// The Claude Code entry point.
-  static Future<String> get currentCcBinary async =>
-      p.join(await currentVersion, 'bin', 'claude');
 
   // ---------------------------------------------------------------------------
   // Sessions
@@ -137,16 +121,4 @@ class TccPaths {
     }
   }
 
-  /// Target architecture for proot binary extraction.
-  static String get prootArch {
-    if (Platform.isAndroid) {
-      // Most Android phones are ARM.  For x86 emulators we still ship aarch64
-      // because proot is installed via Termux which provides the correct arch.
-      return 'aarch64';
-    }
-    return 'aarch64';
-  }
-
-  /// Version constant for the TCC runtime itself.
-  static const String tccVersion = '1.0.0';
 }

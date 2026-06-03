@@ -16,21 +16,6 @@ final sessionProvider =
   return SessionController();
 });
 
-/// Sessions grouped by date label (e.g. "Today", "Yesterday", "2025-01-15").
-final groupedSessionsProvider = Provider<AsyncValue<Map<String, List<SessionInfo>>>>((ref) {
-  final asyncSessions = ref.watch(sessionProvider);
-  return asyncSessions.whenData(_groupByDate);
-});
-
-/// Sessions filtered by project id.
-final projectSessionsProvider =
-    Provider.family<AsyncValue<List<SessionInfo>>, String>((ref, projectId) {
-  final asyncSessions = ref.watch(sessionProvider);
-  return asyncSessions.whenData(
-    (sessions) => sessions.where((s) => s.projectId == projectId).toList(),
-  );
-});
-
 /// ---------------------------------------------------------------------------
 /// Grouping helper
 /// ---------------------------------------------------------------------------
@@ -106,11 +91,6 @@ class SessionController extends StateNotifier<AsyncValue<List<SessionInfo>>> {
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
-  }
-
-  /// Refresh from disk.
-  Future<void> refresh({String? projectId}) async {
-    await loadSessions(projectId: projectId);
   }
 
   /// Read the first line of a JSONL session file and extract metadata.

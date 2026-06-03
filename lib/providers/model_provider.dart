@@ -13,15 +13,6 @@ final modelProvider =
   return ModelController();
 });
 
-/// The currently active model (convenience read).
-final activeModelProvider = Provider<ModelConfig>((ref) {
-  final models = ref.watch(modelProvider);
-  return models.firstWhere(
-    (m) => m.isActive,
-    orElse: () => models.first,
-  );
-});
-
 /// ---------------------------------------------------------------------------
 /// Controller
 /// ---------------------------------------------------------------------------
@@ -168,38 +159,4 @@ class ModelController extends StateNotifier<List<ModelConfig>> {
     _saveModels();
   }
 
-  /// Update the API key for a specific model.
-  void updateApiKey(String id, String apiKey) {
-    state = state.map((m) {
-      if (m.id == id) return m.copyWith(apiKey: apiKey);
-      return m;
-    }).toList();
-    _saveModels();
-  }
-
-  /// Update the base URL for a specific model.
-  void updateBaseUrl(String id, String baseUrl) {
-    state = state.map((m) {
-      if (m.id == id) return m.copyWith(baseUrl: baseUrl);
-      return m;
-    }).toList();
-    _saveModels();
-  }
-
-  /// Returns the active [ModelConfig].
-  ModelConfig get activeModel {
-    return state.firstWhere(
-      (m) => m.isActive,
-      orElse: () => state.first,
-    );
-  }
-
-  /// Find a model by its id.
-  ModelConfig? getById(String id) {
-    try {
-      return state.firstWhere((m) => m.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
 }

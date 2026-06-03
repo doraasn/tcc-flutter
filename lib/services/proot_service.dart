@@ -115,13 +115,30 @@ class PRootService {
 
   /// Extracts the Alpine rootfs from bundled assets if it does not yet exist.
   Future<void> _ensureRootfs() async {
-    final rootfsDir = Directory(await TccPaths.rootfs);
+    final rootfs = await TccPaths.rootfs;
+    final rootfsDir = Directory(rootfs);
+
     if (await rootfsDir.exists()) {
-      // Already extracted — nothing to do.
-      return;
+      // Validate the rootfs is functional by checking for /bin/sh.
+      final binSh = File('$rootfs/bin/sh');
+      if (await binSh.exists()) return;
+
+      // Broken rootfs (e.g. empty placeholder directory), delete and
+      // re-extract from assets.
+      await rootfsDir.delete(recursive: true);
     }
 
     await _extractRootfsFromAssets();
+
+    // Validate extraction succeeded.
+    final binSh = File('$rootfs/bin/sh');
+    if (!await binSh.exists()) {
+      throw StateError(
+        'Rootfs extraction failed: /bin/sh is missing. '
+        'The bundled rootfs.tgz asset may be empty or corrupted. '
+        'Try clearing app data and restarting, or reinstall the APK.',
+      );
+    }
   }
 
   /// Extracts `assets/core/rootfs.tgz` into the rootfs directory.
@@ -156,50 +173,6 @@ class PRootService {
         ], 'Exit code ${result.exitCode}: ${result.stderr}');
       }
     } finally {
-      if (await tmpDir.exists()) {
-        await tmpDir.delete(recursive: true);
-      }
-    }
-  }
-
-  /// Downloads and extracts an Alpine minirootfs from the official CDN.
-  ///
-  /// This is an alternative to the bundled asset — used when the asset is
-  /// not available or a different Alpine version is needed.
-  Future<void> downloadAndExtractRootfs({String? version}) async {
-    final rootfsDir = Directory(await TccPaths.rootfs);
-    if (await rootfsDir.exists()) return;
-
-    final alpineVersion = version ?? '3.19';
-    final arch = TccPaths.alpineArch;
-    final url =
-        'https://dl-cdn.alpinelinux.org/alpine/v$alpineVersion/releases/$arch'
-        '/alpine-minirootfs-$alpineVersion.0-$arch.tar.gz';
-
-    final tmpDir = Directory.systemTemp.createTempSync('tcc_rootfs_dl_');
-    final tarball = File(p.join(tmpDir.path, 'rootfs.tar.gz'));
-    HttpClient? client;
-
-    try {
-      client = HttpClient();
-      final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close();
-      await response.pipe(tarball.openWrite());
-
-      final rootfs = await TccPaths.rootfs;
-      await Directory(rootfs).create(recursive: true);
-
-      final result = await Process.run('tar', [
-        'xzf', tarball.path, '-C', rootfs, '--strip-components=0',
-      ]);
-
-      if (result.exitCode != 0) {
-        throw ProcessException('tar', [
-          'xzf', tarball.path, '-C', rootfs, '--strip-components=0',
-        ], 'Exit code ${result.exitCode}: ${result.stderr}');
-      }
-    } finally {
-      client?.close();
       if (await tmpDir.exists()) {
         await tmpDir.delete(recursive: true);
       }
@@ -368,51 +341,8 @@ class PRootService {
     ]);
   }
 
-  /// Starts a long-running process inside the rootfs (returns immediately).
-  ///
-  /// Caller is responsible for managing the returned [Process] lifecycle.
-  Future<Process> startInRootfs(
-    String command, {
-    Map<String, String>? environment,
-    String? workingDirectory,
-  }) async {
-    final proot = await findProot();
-    final rootfs = await TccPaths.rootfs;
-
-    final args = [
-      '-r', rootfs,
-      '-b', '/dev',
-      '-b', '/proc',
-      '-b', '/sys',
-      '-w', workingDirectory ?? '/root',
-      '/bin/sh', '-c', command,
-    ];
-
-    return Process.start(
-      proot,
-      args,
-      environment: environment,
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Cleanup
   // ---------------------------------------------------------------------------
 
-  /// Deletes the entire rootfs and extracted proot binary, resetting the
-  /// environment to a fresh state.  Next call to [initialize] will re-extract.
-  Future<void> cleanup() async {
-    _initialized = false;
-    _prootPath = null;
-
-    final prootFile = File(await TccPaths.prootBinary);
-    if (await prootFile.exists()) {
-      await prootFile.delete();
-    }
-
-    final rootfsDir = Directory(await TccPaths.rootfs);
-    if (await rootfsDir.exists()) {
-      await rootfsDir.delete(recursive: true);
-    }
-  }
 }

@@ -9,11 +9,13 @@ import '../models/workspace_state.dart';
 class Sidebar extends ConsumerWidget {
   final VoidCallback onClose;
   final Function(String) onProjectSelected;
+  final Function(String sessionId)? onSessionResume;
 
   const Sidebar({
     super.key,
     required this.onClose,
     required this.onProjectSelected,
+    this.onSessionResume,
   });
 
   @override
@@ -174,7 +176,9 @@ class Sidebar extends ConsumerWidget {
         style: TccTextStyles.caption,
       ),
       onTap: () {
-        if (session.projectId.isNotEmpty) {
+        if (session.id.isNotEmpty && onSessionResume != null) {
+          onSessionResume!(session.id);
+        } else if (session.projectId.isNotEmpty) {
           onProjectSelected(session.projectId);
         }
       },

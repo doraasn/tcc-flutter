@@ -84,15 +84,6 @@ class NdjsonParser {
   /// (broadcast controller).
   Stream<NdjsonChunk> get stream => _controller.stream;
 
-  /// Number of lines successfully parsed so far.
-  int get parsedCount => _parsedCount;
-
-  /// Number of lines that failed JSON parsing so far.
-  int get errorCount => _errorCount;
-
-  /// Whether the parser has been closed.
-  bool get isClosed => _closed;
-
   /// Feed raw text into the parser.  Accepts arbitrary chunks — the parser
   /// splits on newlines internally and buffers incomplete lines.
   void feed(String chunk) {
@@ -112,14 +103,6 @@ class NdjsonParser {
 
     _flushBuffer();
     _controller.close();
-  }
-
-  /// Reset the parser state so it can be reused for a new process.
-  void reset() {
-    _buffer = '';
-    _closed = false;
-    _parsedCount = 0;
-    _errorCount = 0;
   }
 
   // ---------------------------------------------------------------------------

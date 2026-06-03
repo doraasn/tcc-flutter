@@ -18,9 +18,6 @@ class ChatMessage {
   });
 
   bool get isUser => role == 'user';
-  bool get isAssistant => role == 'assistant';
-  bool get isSystem => role == 'system';
-  bool get isError => role == 'error';
 
   ChatMessage copyWith({
     String? id,
@@ -76,13 +73,6 @@ class SlashCommand {
     this.category = '',
   });
 
-  factory SlashCommand.fromJson(Map<String, dynamic> json) {
-    return SlashCommand(
-      name: json['name'] ?? '',
-      description: json['description'] ?? '',
-      category: json['category'] ?? '',
-    );
-  }
 }
 
 class SlashCommands {

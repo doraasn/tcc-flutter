@@ -18,11 +18,6 @@ final processProvider =
   return ProcessController(ref);
 });
 
-/// Convenience getter: is the Claude process alive?
-final processRunningProvider = Provider<bool>((ref) {
-  return ref.watch(processProvider).isRunning;
-});
-
 /// ---------------------------------------------------------------------------
 /// Controller
 /// ---------------------------------------------------------------------------
@@ -37,7 +32,6 @@ class ProcessController extends StateNotifier<ProcessState> {
   StreamSubscription<NdjsonChunk>? _parserSub;
   Process? _process;
   StreamSubscription<String>? _stdoutSub;
-  StreamSubscription<String>? _stderrSub;
   IOSink? _stdinSink;
 
   bool get isRunning => state.isRunning;
@@ -113,10 +107,8 @@ class ProcessController extends StateNotifier<ProcessState> {
 
       _parserSub = _parser!.stream.listen(_onChunk);
 
-      _stderrSub = _process!.stderr
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen(_onStderr);
+      // stderr is intentionally not consumed to avoid blocking the process
+      _process!.stderr.drain<void>();
 
       _process!.exitCode.then(_onExit);
 
@@ -156,10 +148,6 @@ class ProcessController extends StateNotifier<ProcessState> {
       default:
         break;
     }
-  }
-
-  void _onStderr(String line) {
-    // Handle stderr output if needed
   }
 
   void _handleAssistantChunk(NdjsonChunk chunk) {
@@ -300,10 +288,8 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   void _cleanupStreams() {
     _stdoutSub?.cancel();
-    _stderrSub?.cancel();
     _parserSub?.cancel();
     _stdoutSub = null;
-    _stderrSub = null;
     _parserSub = null;
   }
 

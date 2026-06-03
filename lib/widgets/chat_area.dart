@@ -3,17 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/localizations.dart';
 import '../core/theme.dart';
 import '../models/chat_message.dart';
-import '../providers/workspace_provider.dart';
 import '../providers/process_provider.dart';
-import '../screens/settings_screen.dart';
 import '../widgets/project_picker.dart';
 import 'input_bar.dart';
 import 'message_bubble.dart';
 
 class ChatArea extends ConsumerStatefulWidget {
   final Function(String) onSendMessage;
+  final VoidCallback? onOpenSettings;
 
-  const ChatArea({super.key, required this.onSendMessage});
+  const ChatArea({super.key, required this.onSendMessage, this.onOpenSettings});
 
   @override
   ConsumerState<ChatArea> createState() => _ChatAreaState();
@@ -106,7 +105,7 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
           ProjectPicker.show(context);
         }),
         _buildQuickAction(AppStrings.settings, Icons.settings, () {
-          _openSettings();
+          widget.onOpenSettings?.call();
         }),
       ],
     );
@@ -143,19 +142,6 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
       itemBuilder: (context, index) {
         return MessageBubble(message: messages[index]);
       },
-    );
-  }
-
-  void _openSettings() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        builder: (context, scrollController) => SettingsScreen(scrollController: scrollController),
-      ),
     );
   }
 }
