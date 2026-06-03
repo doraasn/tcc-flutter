@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../providers/process_provider.dart';
@@ -43,6 +44,21 @@ class _LogPanelState extends ConsumerState<LogPanel> {
     }
   }
 
+  void _copyAll(List<LogEntry> logs) {
+    final text = logs.map((e) => e.toString()).join('\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制全部日志'), duration: Duration(seconds: 1)),
+    );
+  }
+
+  void _copyLine(LogEntry entry) {
+    Clipboard.setData(ClipboardData(text: entry.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制该行'), duration: Duration(seconds: 1)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final logs = ref.watch(debugLogProvider);
@@ -84,10 +100,24 @@ class _LogPanelState extends ConsumerState<LogPanel> {
                 ),
                 const Spacer(),
                 InkWell(
+                  onTap: logs.isEmpty ? null : () => _copyAll(logs),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    child: Text(
+                      '复制全部',
+                      style: TccTextStyles.caption.copyWith(color: TccColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
                   onTap: () => ref.read(debugLogProvider.notifier).clear(),
-                  child: Text(
-                    '清空',
-                    style: TccTextStyles.caption.copyWith(color: TccColors.error),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    child: Text(
+                      '清空',
+                      style: TccTextStyles.caption.copyWith(color: TccColors.error),
+                    ),
                   ),
                 ),
               ],
@@ -108,15 +138,18 @@ class _LogPanelState extends ConsumerState<LogPanel> {
                     itemCount: logs.length,
                     itemBuilder: (context, index) {
                       final entry = logs[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 1),
-                        child: Text(
-                          entry.toString(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                            color: _colorForLevel(entry.level),
-                            height: 1.3,
+                      return InkWell(
+                        onTap: () => _copyLine(entry),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 4),
+                          child: Text(
+                            entry.toString(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              color: _colorForLevel(entry.level),
+                              height: 1.3,
+                            ),
                           ),
                         ),
                       );
