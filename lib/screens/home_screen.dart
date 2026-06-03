@@ -261,7 +261,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     final workspace = ref.read(workspaceProvider);
-    if (workspace.projectId.isEmpty) return;
+    if (workspace.projectId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先创建一个项目')),
+      );
+      return;
+    }
 
     final process = ref.read(processProvider.notifier);
     if (!process.isRunning) {

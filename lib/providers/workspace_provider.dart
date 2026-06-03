@@ -30,13 +30,16 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
 
   Future<void> _loadProjects() async {
     final projects = await this.projects;
-    if (projects.isNotEmpty) {
-      final lastProject = _box.get('lastProject') as String?;
-      if (lastProject != null && projects.contains(lastProject)) {
-        await switchProject(lastProject);
-      } else {
-        await switchProject(projects.first);
-      }
+    if (projects.isEmpty) {
+      // Auto-create a default project on first launch.
+      await createProject('default');
+      return;
+    }
+    final lastProject = _box.get('lastProject') as String?;
+    if (lastProject != null && projects.contains(lastProject)) {
+      await switchProject(lastProject);
+    } else {
+      await switchProject(projects.first);
     }
   }
 
