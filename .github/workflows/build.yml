@@ -57,14 +57,11 @@ jobs:
           sdkmanager --install "ndk;${{ env.NDK_VERSION }}" || true
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Setup proot (simple)
+      - name: Setup proot (from assets)
         run: |
-          chmod +x scripts/build_proot_simple.sh
-          bash scripts/build_proot_simple.sh
-
-      - name: Verify proot binary
-        run: |
-          FILE android/app/src/main/jniLibs/arm64-v8a/proot-arm64
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp assets/core/proot-arm64 android/app/src/main/jniLibs/arm64-v8a/proot-arm64
+          chmod 755 android/app/src/main/jniLibs/arm64-v8a/proot-arm64
           ls -lh android/app/src/main/jniLibs/arm64-v8a/proot-arm64
 
       - name: Create minimal rootfs placeholder
