@@ -146,7 +146,7 @@ class AppStrings {
   static const String switchFailed = '切换失败';
   static const String cannotDeleteActive = '无法删除当前使用的版本';
   static const String confirmDelete = '确认删除';
-  static const String confirmDeleteVersion(String name) => '确定删除版本 $name？';
+  static String confirmDeleteVersion(String name) => '确定删除版本 $name？';
   static const String confirmPrune = '确定删除所有旧版本？仅保留当前使用的版本。';
   static const String versionInstalled = '版本安装成功';
   static const String versionSwitched = '已切换到新版本';
