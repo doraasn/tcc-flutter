@@ -34,6 +34,7 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   final PRootService _prootService = PRootService();
   NdjsonParser? _parser;
+  StreamSubscription<NdjsonChunk>? _parserSub;
   Process? _process;
   StreamSubscription<String>? _stdoutSub;
   StreamSubscription<String>? _stderrSub;
@@ -108,8 +109,9 @@ class ProcessController extends StateNotifier<ProcessState> {
 
       _stdoutSub = _process!.stdout
           .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen(_onStdout);
+          .listen(_onData);
+
+      _parserSub = _parser!.stream.listen(_onChunk);
 
       _stderrSub = _process!.stderr
           .transform(utf8.decoder)
@@ -131,30 +133,28 @@ class ProcessController extends StateNotifier<ProcessState> {
   // Stream parsing
   // ---------------------------------------------------------------------------
 
-  void _onStdout(String line) {
-    _parser?.feed(line + '\n');
-    try {
-      final json = jsonDecode(line) as Map<String, dynamic>;
-      final type = json['type'] as String?;
+  /// Feeds raw UTF-8 text into the NDJSON parser which handles partial lines.
+  void _onData(String data) {
+    _parser?.feed(data);
+  }
 
-      switch (type) {
-        case 'assistant':
-          _handleAssistantChunk(json);
-          break;
-        case 'result':
-          _handleResult(json);
-          break;
-        case 'error':
-          _handleError(json);
-          break;
-        case 'system':
-          _handleSystem(json);
-          break;
-        default:
-          break;
-      }
-    } catch (_) {
-      // Non-JSON line – ignore.
+  /// Dispatches fully-parsed chunks from the [NdjsonParser] stream.
+  void _onChunk(NdjsonChunk chunk) {
+    switch (chunk.type) {
+      case 'assistant':
+        _handleAssistantChunk(chunk);
+        break;
+      case 'result':
+        _handleResult(chunk);
+        break;
+      case 'error':
+        _handleError(chunk);
+        break;
+      case 'system':
+        _handleSystem(chunk);
+        break;
+      default:
+        break;
     }
   }
 
@@ -162,8 +162,8 @@ class ProcessController extends StateNotifier<ProcessState> {
     // Handle stderr output if needed
   }
 
-  void _handleAssistantChunk(Map<String, dynamic> json) {
-    final content = json['content'] as String? ?? '';
+  void _handleAssistantChunk(NdjsonChunk chunk) {
+    final content = chunk.content ?? '';
     if (content.isEmpty) return;
 
     final messages = _readMessages();
@@ -186,7 +186,7 @@ class ProcessController extends StateNotifier<ProcessState> {
     _writeMessages(messages);
   }
 
-  void _handleResult(Map<String, dynamic> json) {
+  void _handleResult(NdjsonChunk chunk) {
     final messages = _readMessages();
     if (messages.isNotEmpty && messages.last.isStreaming) {
       messages[messages.length - 1] =
@@ -194,14 +194,13 @@ class ProcessController extends StateNotifier<ProcessState> {
     }
     _writeMessages(messages);
 
-    final sessionId = json['session_id'] as String?;
-    if (sessionId != null) {
-      state = state.copyWith(sessionId: sessionId);
+    if (chunk.sessionId != null) {
+      state = state.copyWith(sessionId: chunk.sessionId);
     }
   }
 
-  void _handleError(Map<String, dynamic> json) {
-    final error = json['error'] as String? ?? 'Unknown error';
+  void _handleError(NdjsonChunk chunk) {
+    final error = chunk.error ?? 'Unknown error';
     final messages = _readMessages();
     messages.add(ChatMessage(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -214,9 +213,23 @@ class ProcessController extends StateNotifier<ProcessState> {
     state = state.copyWith(error: error);
   }
 
-  void _handleSystem(Map<String, dynamic> json) {
-    final message = json['message'] as String?;
+  void _handleSystem(NdjsonChunk chunk) {
+    // Extract the message text from the chunk payload.
+    String? message;
+    if (chunk.data is Map<String, dynamic>) {
+      message = (chunk.data as Map<String, dynamic>)['message'] as String?;
+    } else if (chunk.data is String) {
+      message = chunk.data as String;
+    }
     if (message == null || message.isEmpty) return;
+
+    final metadata = <String, dynamic>{'type': chunk.type};
+    if (chunk.data is Map<String, dynamic>) {
+      metadata.addAll(chunk.data as Map<String, dynamic>);
+    }
+    if (chunk.sessionId != null) {
+      metadata['session_id'] = chunk.sessionId;
+    }
 
     final messages = _readMessages();
     messages.add(ChatMessage(
@@ -224,7 +237,7 @@ class ProcessController extends StateNotifier<ProcessState> {
       role: 'system',
       content: message,
       timestamp: DateTime.now(),
-      metadata: {'type': 'system', ...json},
+      metadata: metadata,
     ));
     _writeMessages(messages);
   }
@@ -241,6 +254,7 @@ class ProcessController extends StateNotifier<ProcessState> {
       state = state.copyWith(isRunning: false, sessionId: null);
     }
 
+    _parser?.close();
     _cleanupStreams();
   }
 
@@ -272,6 +286,7 @@ class ProcessController extends StateNotifier<ProcessState> {
   void kill() {
     _process?.kill(ProcessSignal.sigterm);
     _cleanupStreams();
+    _parser?.close();
     _process = null;
     _stdinSink = null;
     _parser = null;
@@ -286,8 +301,10 @@ class ProcessController extends StateNotifier<ProcessState> {
   void _cleanupStreams() {
     _stdoutSub?.cancel();
     _stderrSub?.cancel();
+    _parserSub?.cancel();
     _stdoutSub = null;
     _stderrSub = null;
+    _parserSub = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -308,9 +325,15 @@ class ProcessController extends StateNotifier<ProcessState> {
 
     final env = <String, String>{
       'ANTHROPIC_BASE_URL': baseUrl,
-      'ANTHROPIC_API_KEY': apiKey,
       'ANTHROPIC_AUTH_TOKEN': apiKey,
-      'CLAUDE_MODEL': modelId,
+      'ANTHROPIC_MODEL': modelId,
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL': modelId,
+      'ANTHROPIC_DEFAULT_SONNET_MODEL': modelId,
+      'ANTHROPIC_DEFAULT_OPUS_MODEL': modelId,
+      'ANTHROPIC_DEFAULT_SONNET_MODEL_NAME': modelId,
+      'ANTHROPIC_DEFAULT_OPUS_MODEL_NAME': modelId,
+      'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1',
+      'DISABLE_AUTOUPDATER': '1',
     };
 
     await start(

@@ -81,11 +81,19 @@ class ModelController extends StateNotifier<List<ModelConfig>> {
       ModelConfig(
         id: 'mimo',
         name: 'Mimo v2.5',
-        baseUrl: 'https://api.siliconflow.cn/v1',
+        baseUrl: 'https://api.xiaomimimo.com/anthropic',
         apiKey: '',
-        modelId: 'XiaomiMiMo/MiMo-7B-RL',
-        contextLength: 128000,
+        modelId: 'mimo-v2.5',
+        contextLength: 200000,
         isActive: true,
+      ),
+      ModelConfig(
+        id: 'mimo-pro',
+        name: 'Mimo v2.5 Pro',
+        baseUrl: 'https://api.xiaomimimo.com/anthropic',
+        apiKey: '',
+        modelId: 'mimo-v2.5-pro',
+        contextLength: 200000,
       ),
       ModelConfig(
         id: 'deepseek',

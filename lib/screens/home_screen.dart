@@ -9,6 +9,7 @@ import '../providers/workspace_provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/process_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/chat_provider.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/chat_area.dart';
 import '../widgets/project_picker.dart';
@@ -190,6 +191,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => ProjectPicker.show(context),
             tooltip: AppStrings.projects,
           ),
+          if (ref.watch(chatHasMessagesProvider))
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.ios_share, color: TccColors.onSurfaceVariant),
+              tooltip: AppStrings.exportSession,
+              onSelected: _handleExport,
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'markdown',
+                  child: Text(AppStrings.exportAsMarkdown),
+                ),
+                const PopupMenuItem(
+                  value: 'json',
+                  child: Text(AppStrings.exportAsJson),
+                ),
+              ],
+            ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => _openSettings(),
@@ -255,6 +272,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _showNewProjectDialog() {
     ProjectPicker.show(context);
+  }
+
+  void _handleExport(String format) {
+    final chatCtrl = ref.read(chatProvider.notifier);
+    final text = switch (format) {
+      'markdown' => chatCtrl.exportAsMarkdown(),
+      'json' => chatCtrl.exportAsJsonString(),
+      _ => '',
+    };
+    if (text.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(AppStrings.copiedToClipboard)),
+    );
   }
 
   void _openSettings() {

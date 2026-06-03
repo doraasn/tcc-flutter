@@ -96,7 +96,63 @@ class AppStrings {
     '/project': cmdProject,
   };
 
+  // ── MCP Servers ────────────────────────────────────────────────────────────
+
+  static const String mcpServers = 'MCP 服务器';
+  static const String mcpDescription =
+      'MCP（模型上下文协议）服务器为 Claude 提供额外的工具和数据源。'
+      '配置后 Claude 可通过这些服务器访问文件系统、数据库等外部资源。';
+  static const String addMcpServer = '添加服务器';
+  static const String editMcpServer = '编辑服务器';
+  static const String deleteMcpServer = '删除服务器';
+  static const String serverName = '服务器名称';
+  static const String command = '命令';
+  static const String commandHint = '例如: npx, node, /usr/bin/python3';
+  static const String args = '参数';
+  static const String argsHint = '每行一个参数';
+  static const String noMcpServers = '暂无已配置的 MCP 服务器';
+
+  static String deleteMcpServerConfirm(String name) =>
+      '确定删除 MCP 服务器 "$name"？';
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+
+  static const String exportSession = '导出会话';
+  static const String exportAsMarkdown = '导出为 Markdown';
+  static const String exportAsJson = '导出为 JSON';
+
   // ── Process ──────────────────────────────────────────────────────────────────
 
   static const String stopProcess = '终止进程';
+
+  // ── Version Management ─────────────────────────────────────────────────────
+
+  static const String versionManagement = '版本管理';
+  static const String activeVersion = '当前版本';
+  static const String installedVersions = '已安装版本';
+  static const String noVersionsInstalled = '尚未安装任何版本';
+  static const String installNewVersion = '安装新版本';
+  static const String installVersion = '安装版本';
+  static const String versionNumberHint = '版本号（留空安装最新版）';
+  static const String switchToVersion = '切换到此版本';
+  static const String rollback = '回滚';
+  static const String rollbackToPrevious = '回滚到上一版本';
+  static const String pruneOldVersions = '清理旧版本';
+  static const String deleteVersion = '删除此版本';
+  static const String active = '使用中';
+  static const String installing = '安装中...';
+  static const String switching = '切换中...';
+  static const String downloadFailed = '下载失败';
+  static const String switchFailed = '切换失败';
+  static const String cannotDeleteActive = '无法删除当前使用的版本';
+  static const String confirmDelete = '确认删除';
+  static const String confirmDeleteVersion(String name) => '确定删除版本 $name？';
+  static const String confirmPrune = '确定删除所有旧版本？仅保留当前使用的版本。';
+  static const String versionInstalled = '版本安装成功';
+  static const String versionSwitched = '已切换到新版本';
+  static const String versionRolledBack = '已回滚到上一版本';
+  static const String versionsPruned = '已清理旧版本';
+  static const String versionDeleted = '版本已删除';
+  static const String noVersionsToPrune = '没有需要清理的旧版本';
+  static const String needTwoVersions = '至少需要两个版本才能回滚';
 }
