@@ -62,8 +62,8 @@ android {
         }
         release {
             signingConfig signingConfigs.debug  // Use debug key; replace with release key for production
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             debuggable false
             jniDebuggable false
