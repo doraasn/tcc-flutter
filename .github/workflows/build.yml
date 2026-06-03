@@ -95,7 +95,7 @@ jobs:
 
       - name: Build release APK
         run: |
-          flutter build apk --release --target-platform=android-arm64
+          flutter build apk --target-platform android-arm64
 
       - name: Verify APK
         run: |
