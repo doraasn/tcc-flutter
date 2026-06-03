@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import '../core/localizations.dart';
 import '../core/theme.dart';
 import '../models/chat_message.dart';
 import 'typing_indicator.dart';
@@ -137,7 +138,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       selectable: true,
       styleSheet: MarkdownStyleSheet(
         p: TccTextStyles.bodyLarge.copyWith(
-          color: isUser ? TccColors.onSurface : TccColors.onSurface,
+          color: isUser ? Colors.white : TccColors.onSurface,
         ),
         strong: TccTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
         em: TccTextStyles.bodyLarge.copyWith(fontStyle: FontStyle.italic),
@@ -180,7 +181,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         Clipboard.setData(ClipboardData(text: message.content));
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Copied to clipboard'),
+            content: Text(AppStrings.copiedToClipboard),
             duration: Duration(seconds: 1),
           ),
         );

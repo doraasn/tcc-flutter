@@ -1,19 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/localizations.dart';
 import '../core/theme.dart';
 import '../models/workspace_state.dart';
 import '../providers/model_provider.dart';
 import '../providers/settings_provider.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
 
   const SettingsScreen({super.key, this.scrollController});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  late final TextEditingController _globalPromptController;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = ref.read(settingsProvider);
+    _globalPromptController = TextEditingController(text: settings.globalPrompt);
+  }
+
+  @override
+  void dispose() {
+    _globalPromptController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final models = ref.watch(modelProvider);
     final settings = ref.watch(settingsProvider);
+
+    // Sync controller text when settings change externally (e.g. reset).
+    if (_globalPromptController.text != settings.globalPrompt) {
+      _globalPromptController.text = settings.globalPrompt;
+    }
 
     return Container(
       decoration: const BoxDecoration(
@@ -26,23 +52,23 @@ class SettingsScreen extends ConsumerWidget {
           _buildHeader(context),
           Expanded(
             child: ListView(
-              controller: scrollController,
+              controller: widget.scrollController,
               children: [
-                _buildSection('Models', [
+                _buildSection(AppStrings.models, [
                   for (final model in models)
                     _buildModelTile(context, ref, model),
                   _buildAddModelButton(context, ref),
                 ]),
                 const Divider(),
-                _buildSection('Global Prompt', [
+                _buildSection(AppStrings.globalPrompt, [
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: TextField(
                       maxLines: 4,
                       decoration: const InputDecoration(
-                        hintText: 'Enter global prompt that applies to all sessions...',
+                        hintText: AppStrings.globalPromptHint,
                       ),
-                      controller: TextEditingController(text: settings.globalPrompt),
+                      controller: _globalPromptController,
                       onChanged: (value) {
                         ref.read(settingsProvider.notifier).updateGlobalPrompt(value);
                       },
@@ -50,13 +76,13 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ]),
                 const Divider(),
-                _buildSection('About', [
+                _buildSection(AppStrings.about, [
                   ListTile(
-                    title: const Text('TCC Version'),
+                    title: const Text(AppStrings.tccVersion),
                     subtitle: const Text('1.0.0'),
                   ),
                   ListTile(
-                    title: const Text('Claude Code Version'),
+                    title: const Text(AppStrings.claudeCodeVersion),
                     subtitle: const Text('2.1.153 (bundled)'),
                   ),
                 ]),
@@ -87,7 +113,7 @@ class SettingsScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Text('Settings', style: TccTextStyles.titleLarge),
+          const Text(AppStrings.settings, style: TccTextStyles.titleLarge),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.close),
@@ -130,13 +156,13 @@ class SettingsScreen extends ConsumerWidget {
       isThreeLine: true,
       trailing: PopupMenuButton(
         itemBuilder: (context) => [
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'edit',
-            child: Text('Edit'),
+            child: Text(AppStrings.edit),
           ),
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'delete',
-            child: Text('Delete'),
+            child: Text(AppStrings.delete),
           ),
         ],
         onSelected: (value) {
@@ -153,7 +179,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget _buildAddModelButton(BuildContext context, WidgetRef ref) {
     return ListTile(
       leading: const Icon(Icons.add, color: TccColors.primary),
-      title: const Text('Add Model'),
+      title: const Text(AppStrings.addModel),
       onTap: () => _showAddModelDialog(context, ref),
     );
   }
@@ -167,36 +193,36 @@ class SettingsScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Model'),
+        title: const Text(AppStrings.addModel),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(hintText: 'Name'),
+              decoration: const InputDecoration(hintText: AppStrings.name),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: baseUrlController,
-              decoration: const InputDecoration(hintText: 'Base URL'),
+              decoration: const InputDecoration(hintText: AppStrings.baseUrl),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: apiKeyController,
-              decoration: const InputDecoration(hintText: 'API Key'),
+              decoration: const InputDecoration(hintText: AppStrings.apiKey),
               obscureText: true,
             ),
             const SizedBox(height: 8),
             TextField(
               controller: modelIdController,
-              decoration: const InputDecoration(hintText: 'Model ID'),
+              decoration: const InputDecoration(hintText: AppStrings.modelId),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () {
@@ -213,7 +239,7 @@ class SettingsScreen extends ConsumerWidget {
                 Navigator.pop(context);
               }
             },
-            child: const Text('Add'),
+            child: const Text(AppStrings.add),
           ),
         ],
       ),
@@ -229,36 +255,36 @@ class SettingsScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Edit Model'),
+        title: const Text(AppStrings.editModel),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(hintText: 'Name'),
+              decoration: const InputDecoration(hintText: AppStrings.name),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: baseUrlController,
-              decoration: const InputDecoration(hintText: 'Base URL'),
+              decoration: const InputDecoration(hintText: AppStrings.baseUrl),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: apiKeyController,
-              decoration: const InputDecoration(hintText: 'API Key'),
+              decoration: const InputDecoration(hintText: AppStrings.apiKey),
               obscureText: true,
             ),
             const SizedBox(height: 8),
             TextField(
               controller: modelIdController,
-              decoration: const InputDecoration(hintText: 'Model ID'),
+              decoration: const InputDecoration(hintText: AppStrings.modelId),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () {
@@ -270,7 +296,7 @@ class SettingsScreen extends ConsumerWidget {
               ));
               Navigator.pop(context);
             },
-            child: const Text('Save'),
+            child: const Text(AppStrings.save),
           ),
         ],
       ),

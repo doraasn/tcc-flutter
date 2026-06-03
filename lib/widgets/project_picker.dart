@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
+import '../core/localizations.dart';
 import '../models/workspace_state.dart';
 import '../providers/workspace_provider.dart';
 
@@ -67,7 +68,7 @@ class _ProjectPickerState extends ConsumerState<ProjectPicker> {
         children: [
           const Icon(Icons.folder, color: TccColors.primary, size: 20),
           const SizedBox(width: 10),
-          const Text('Projects', style: TccTextStyles.titleMedium),
+          const Text(AppStrings.projects, style: TccTextStyles.titleMedium),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.close, size: 20),
@@ -89,7 +90,7 @@ class _ProjectPickerState extends ConsumerState<ProjectPicker> {
                     controller: _createController,
                     autofocus: true,
                     decoration: const InputDecoration(
-                      hintText: 'Project name',
+                      hintText: AppStrings.projectName,
                       isDense: true,
                       contentPadding:
                           EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -120,7 +121,7 @@ class _ProjectPickerState extends ConsumerState<ProjectPicker> {
               child: OutlinedButton.icon(
                 onPressed: () => setState(() => _isCreating = true),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('New Project'),
+                label: const Text(AppStrings.newProject),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: TccColors.primary,
                   side: const BorderSide(color: TccColors.primary),
@@ -142,7 +143,7 @@ class _ProjectPickerState extends ConsumerState<ProjectPicker> {
         if (projects.isEmpty) {
           return const Padding(
             padding: EdgeInsets.all(24),
-            child: Text('No projects yet', style: TccTextStyles.caption),
+            child: Text(AppStrings.noProjects, style: TccTextStyles.caption),
           );
         }
 
@@ -167,7 +168,7 @@ class _ProjectPickerState extends ConsumerState<ProjectPicker> {
     return ListTile(
       dense: true,
       selected: isActive,
-      selectedTileColor: TccColors.primary.withOpacity(0.1),
+      selectedTileColor: TccColors.primary.withValues(alpha: 0.1),
       leading: Icon(
         isActive ? Icons.folder : Icons.folder_outlined,
         color: isActive ? TccColors.primary : TccColors.onSurfaceVariant,
@@ -216,19 +217,19 @@ class _ProjectPickerState extends ConsumerState<ProjectPicker> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Project'),
-        content: Text('Delete "$project" and all its files?'),
+        title: Text(AppStrings.deleteProject),
+        content: Text(AppStrings.deleteProjectConfirm(project)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () {
               ref.read(workspaceProvider.notifier).deleteProject(project);
               Navigator.pop(ctx);
             },
-            child: const Text('Delete', style: TextStyle(color: TccColors.error)),
+            child: Text(AppStrings.delete, style: TextStyle(color: TccColors.error)),
           ),
         ],
       ),

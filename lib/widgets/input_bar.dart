@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/localizations.dart';
 import '../core/theme.dart';
-import '../models/chat_message.dart';
 import '../models/workspace_state.dart';
 import '../providers/workspace_provider.dart';
 import '../providers/process_provider.dart';
@@ -73,8 +73,8 @@ class _InputBarState extends ConsumerState<InputBar> {
                       minLines: 1,
                       decoration: InputDecoration(
                         hintText: processState.isRunning
-                            ? 'Type your message...'
-                            : 'Start a conversation...',
+                            ? AppStrings.inputMessageHint
+                            : AppStrings.startConversationHint,
                         suffixIcon: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -121,13 +121,13 @@ class _InputBarState extends ConsumerState<InputBar> {
         ),
         const SizedBox(width: 6),
         Text(
-          processState.isRunning ? 'Connected' : 'Disconnected',
+          processState.isRunning ? AppStrings.connected : AppStrings.disconnected,
           style: TccTextStyles.caption,
         ),
         const Spacer(),
         if (processState.sessionId != null)
           Text(
-            'Session: ${processState.sessionId!.substring(0, 8)}...',
+            '${AppStrings.sessionPrefix}${processState.sessionId!.length > 8 ? processState.sessionId!.substring(0, 8) : processState.sessionId!}...',
             style: TccTextStyles.caption,
           ),
       ],

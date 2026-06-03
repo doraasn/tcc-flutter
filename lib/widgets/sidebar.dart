@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
+import '../core/localizations.dart';
 import '../providers/workspace_provider.dart';
 import '../providers/session_provider.dart';
 import '../models/workspace_state.dart';
@@ -38,7 +39,7 @@ class Sidebar extends ConsumerWidget {
               children: [
                 _buildProjectsSection(ref, workspace),
                 const Divider(),
-                _buildSessionsSection(sessionsAsync),
+                _buildSessionsSection(ref, sessionsAsync),
               ],
             ),
           ),
@@ -55,7 +56,7 @@ class Sidebar extends ConsumerWidget {
         children: [
           const Icon(Icons.terminal, color: TccColors.primary, size: 20),
           const SizedBox(width: 8),
-          const Text('TCC', style: TccTextStyles.titleMedium),
+          const Text(AppStrings.appName, style: TccTextStyles.titleMedium),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.close, size: 20),
@@ -72,7 +73,7 @@ class Sidebar extends ConsumerWidget {
       child: OutlinedButton.icon(
         onPressed: () => _showNewProjectDialog(ref),
         icon: const Icon(Icons.add, size: 18),
-        label: const Text('New Project'),
+        label: const Text(AppStrings.newProject),
         style: OutlinedButton.styleFrom(
           foregroundColor: TccColors.primary,
           side: const BorderSide(color: TccColors.primary),
@@ -91,7 +92,7 @@ class Sidebar extends ConsumerWidget {
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text('PROJECTS', style: TccTextStyles.caption),
+              child: Text(AppStrings.projects, style: TccTextStyles.caption),
             ),
             for (final project in projects)
               _buildProjectItem(ref, project, workspace.projectId),
@@ -121,28 +122,28 @@ class Sidebar extends ConsumerWidget {
       ),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline, size: 16),
-        onPressed: () => ref.read(workspaceProvider.notifier).deleteProject(projectId),
+        onPressed: () => _confirmDeleteProject(ref, projectId),
       ),
       onTap: () => onProjectSelected(projectId),
     );
   }
 
-  Widget _buildSessionsSection(AsyncValue<List<SessionInfo>> sessionsAsync) {
+  Widget _buildSessionsSection(WidgetRef ref, AsyncValue<List<SessionInfo>> sessionsAsync) {
     return sessionsAsync.when(
       data: (sessions) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text('SESSIONS', style: TccTextStyles.caption),
+            child: Text(AppStrings.sessions, style: TccTextStyles.caption),
           ),
           if (sessions.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('No sessions yet', style: TccTextStyles.caption),
+              child: Text(AppStrings.noSessions, style: TccTextStyles.caption),
             ),
           for (final session in sessions)
-            _buildSessionItem(session),
+            _buildSessionItem(ref, session),
         ],
       ),
       loading: () => const Center(
@@ -158,7 +159,7 @@ class Sidebar extends ConsumerWidget {
     );
   }
 
-  Widget _buildSessionItem(SessionInfo session) {
+  Widget _buildSessionItem(WidgetRef ref, SessionInfo session) {
     return ListTile(
       dense: true,
       leading: const Icon(Icons.chat_bubble_outline, size: 18),
@@ -173,16 +174,41 @@ class Sidebar extends ConsumerWidget {
         style: TccTextStyles.caption,
       ),
       onTap: () {
-        // TODO: Resume session
+        if (session.projectId.isNotEmpty) {
+          onProjectSelected(session.projectId);
+        }
       },
     );
   }
 
   String _formatDate(DateTime date) {
     final now = DateTime.now();
-    if (date.day == now.day) return 'Today ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
-    if (date.day == now.day - 1) return 'Yesterday';
+    if (date.day == now.day) return '${AppStrings.today} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    if (date.day == now.day - 1) return AppStrings.yesterday;
     return '${date.month}/${date.day}';
+  }
+
+  void _confirmDeleteProject(WidgetRef ref, String projectId) {
+    showDialog(
+      context: ref.context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(AppStrings.deleteProject),
+        content: Text(AppStrings.deleteProjectConfirm(projectId)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(AppStrings.cancel),
+          ),
+          TextButton(
+            onPressed: () {
+              ref.read(workspaceProvider.notifier).deleteProject(projectId);
+              Navigator.pop(ctx);
+            },
+            child: const Text(AppStrings.delete, style: TextStyle(color: TccColors.error)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showNewProjectDialog(WidgetRef ref) {
@@ -190,18 +216,18 @@ class Sidebar extends ConsumerWidget {
     showDialog(
       context: ref.context,
       builder: (context) => AlertDialog(
-        title: const Text('New Project'),
+        title: const Text(AppStrings.newProject),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
-            hintText: 'Project name',
+            hintText: AppStrings.projectName,
           ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () {
@@ -210,7 +236,7 @@ class Sidebar extends ConsumerWidget {
                 Navigator.pop(context);
               }
             },
-            child: const Text('Create'),
+            child: const Text(AppStrings.create),
           ),
         ],
       ),

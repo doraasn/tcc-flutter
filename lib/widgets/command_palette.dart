@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/theme.dart';
+import '../core/localizations.dart';
 import '../models/chat_message.dart';
 
 /// Slash command autocomplete popup that appears when user types "/".
@@ -23,43 +24,43 @@ class CommandPalette extends StatefulWidget {
   static const defaultCommands = [
     SlashCommand(
       name: '/clear',
-      description: 'Clear the current conversation',
-      category: 'General',
+      description: AppStrings.cmdClear,
+      category: AppStrings.generalCategory,
     ),
     SlashCommand(
       name: '/help',
-      description: 'Show available commands and shortcuts',
-      category: 'General',
+      description: AppStrings.cmdHelp,
+      category: AppStrings.generalCategory,
     ),
     SlashCommand(
       name: '/compact',
-      description: 'Compact the conversation to save context',
-      category: 'General',
+      description: AppStrings.cmdCompact,
+      category: AppStrings.generalCategory,
     ),
     SlashCommand(
       name: '/model',
-      description: 'Switch the active model',
-      category: 'Settings',
+      description: AppStrings.cmdModel,
+      category: AppStrings.settings,
     ),
     SlashCommand(
       name: '/status',
-      description: 'Show current session status',
-      category: 'General',
+      description: AppStrings.cmdStatus,
+      category: AppStrings.generalCategory,
     ),
     SlashCommand(
       name: '/stop',
-      description: 'Stop the current generation',
-      category: 'General',
+      description: AppStrings.cmdStop,
+      category: AppStrings.generalCategory,
     ),
     SlashCommand(
       name: '/cost',
-      description: 'Show token usage and cost',
-      category: 'General',
+      description: AppStrings.cmdCost,
+      category: AppStrings.generalCategory,
     ),
     SlashCommand(
       name: '/project',
-      description: 'Switch or manage projects',
-      category: 'Settings',
+      description: AppStrings.cmdProject,
+      category: AppStrings.settings,
     ),
   ];
 
@@ -184,7 +185,7 @@ class _CommandPaletteState extends State<CommandPalette> {
           const Icon(Icons.terminal, size: 14, color: TccColors.primary),
           const SizedBox(width: 6),
           Text(
-            'Commands',
+            AppStrings.commands,
             style: TccTextStyles.caption.copyWith(
               color: TccColors.onSurface,
               fontWeight: FontWeight.w600,
@@ -192,7 +193,7 @@ class _CommandPaletteState extends State<CommandPalette> {
           ),
           const Spacer(),
           Text(
-            '${_filteredCommands.length} available',
+            '${_filteredCommands.length} ${AppStrings.available}',
             style: TccTextStyles.caption.copyWith(fontSize: 10),
           ),
         ],

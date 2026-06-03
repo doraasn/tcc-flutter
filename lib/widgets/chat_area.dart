@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/localizations.dart';
 import '../core/theme.dart';
 import '../models/chat_message.dart';
 import '../providers/workspace_provider.dart';
 import '../providers/process_provider.dart';
+import '../screens/settings_screen.dart';
 import '../widgets/project_picker.dart';
 import 'input_bar.dart';
 import 'message_bubble.dart';
@@ -74,7 +76,7 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
           ),
           const SizedBox(height: 24),
           Text(
-            'TCC',
+            AppStrings.appName,
             style: TccTextStyles.titleLarge.copyWith(
               color: TccColors.onSurface,
               fontSize: 24,
@@ -82,7 +84,7 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
           ),
           const SizedBox(height: 8),
           Text(
-            'AI-Native Mobile IDE Workspace',
+            AppStrings.tagline,
             style: TccTextStyles.caption.copyWith(fontSize: 14),
           ),
           const SizedBox(height: 32),
@@ -97,13 +99,13 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
       spacing: 8,
       runSpacing: 8,
       children: [
-        _buildQuickAction('New Project', Icons.add, () {
+        _buildQuickAction(AppStrings.newProject, Icons.add, () {
           ProjectPicker.show(context);
         }),
-        _buildQuickAction('Open Project', Icons.folder_open, () {
+        _buildQuickAction(AppStrings.openProject, Icons.folder_open, () {
           ProjectPicker.show(context);
         }),
-        _buildQuickAction('Settings', Icons.settings, () {
+        _buildQuickAction(AppStrings.settings, Icons.settings, () {
           _openSettings();
         }),
       ],
@@ -152,31 +154,7 @@ class _ChatAreaState extends ConsumerState<ChatArea> {
         initialChildSize: 0.9,
         maxChildSize: 0.95,
         minChildSize: 0.5,
-        builder: (context, scrollController) => const SettingsScreenPlaceholder(),
-      ),
-    );
-  }
-}
-
-/// Placeholder to avoid circular import with settings_screen.dart.
-/// The actual settings screen is opened from HomeScreen.
-class SettingsScreenPlaceholder extends StatelessWidget {
-  const SettingsScreenPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: TccColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Center(
-        child: Text(
-          'Open settings from the app bar',
-          style: TccTextStyles.bodyMedium.copyWith(
-            color: TccColors.onSurfaceVariant,
-          ),
-        ),
+        builder: (context, scrollController) => SettingsScreen(scrollController: scrollController),
       ),
     );
   }

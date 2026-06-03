@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../core/theme.dart';
+import '../core/localizations.dart';
 import '../models/workspace_state.dart';
 import '../providers/session_provider.dart';
 
@@ -33,10 +34,10 @@ class SessionList extends ConsumerWidget {
                   Icon(Icons.chat_bubble_outline,
                       size: 48, color: TccColors.onSurfaceVariant),
                   SizedBox(height: 12),
-                  Text('No sessions yet', style: TccTextStyles.caption),
+                  Text(AppStrings.noSessions, style: TccTextStyles.caption),
                   SizedBox(height: 4),
                   Text(
-                    'Start a conversation to create your first session',
+                    AppStrings.startConversation,
                     style: TccTextStyles.caption,
                     textAlign: TextAlign.center,
                   ),
@@ -80,16 +81,16 @@ class SessionList extends ConsumerWidget {
       );
 
       if (sessionDate.isAtSameMomentAs(today)) {
-        grouped.putIfAbsent('Today', () => []).add(session);
+        grouped.putIfAbsent(AppStrings.today, () => []).add(session);
       } else if (sessionDate.isAtSameMomentAs(yesterday)) {
-        grouped.putIfAbsent('Yesterday', () => []).add(session);
+        grouped.putIfAbsent(AppStrings.yesterday, () => []).add(session);
       } else {
         older.add(session);
       }
     }
 
     if (older.isNotEmpty) {
-      grouped['Older'] = older;
+      grouped[AppStrings.older] = older;
     }
 
     return grouped;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
+import '../core/localizations.dart';
 import '../models/chat_message.dart';
 import '../models/workspace_state.dart';
 import '../providers/workspace_provider.dart';
@@ -148,12 +149,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  workspace.projectName.isNotEmpty ? workspace.projectName : 'TCC',
+                  workspace.projectName.isNotEmpty ? workspace.projectName : AppStrings.appName,
                   style: TccTextStyles.titleMedium,
                 ),
                 if (workspace.openSpecSkills.isNotEmpty)
                   Text(
-                    'opsx enabled',
+                    AppStrings.opsxEnabled,
                     style: TccTextStyles.caption.copyWith(color: TccColors.primary),
                   ),
               ],
@@ -182,17 +183,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: processState.isRunning
                 ? () => ref.read(processProvider.notifier).kill()
                 : null,
-            tooltip: 'Stop process',
+            tooltip: AppStrings.stopProcess,
           ),
           IconButton(
             icon: const Icon(Icons.folder_open, color: TccColors.onSurfaceVariant),
             onPressed: () => ProjectPicker.show(context),
-            tooltip: 'Projects',
+            tooltip: AppStrings.projects,
           ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => _openSettings(),
-            tooltip: 'Settings',
+            tooltip: AppStrings.settings,
           ),
         ],
       ),
@@ -203,7 +204,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return GestureDetector(
       onTap: () => setState(() => _commandPaletteOpen = false),
       child: Container(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.black.withValues(alpha: 0.3),
         child: Center(
           child: GestureDetector(
             onTap: () {}, // Prevent tap from closing
