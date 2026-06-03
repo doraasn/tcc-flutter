@@ -106,10 +106,12 @@ jobs:
           echo "127.0.0.1 localhost" > "$ROOTFS_DIR/etc/hosts"
           echo "tcc" > "$ROOTFS_DIR/etc/hostname"
 
-          # Use qemu-aarch64-static directly as the ELF interpreter
-          # This works without root because binfmt-support registered it
+          # Use qemu-aarch64-static with QEMU_LD_PREFIX to resolve libs from rootfs
+          export QEMU_LD_PREFIX="$ROOTFS_DIR"
+          QEMU="$ROOTFS_DIR/usr/bin/qemu-aarch64-static"
+
           echo "Installing Node.js..."
-          "$ROOTFS_DIR/usr/bin/qemu-aarch64-static" "$ROOTFS_DIR/bin/sh" -c "
+          "$QEMU" "$ROOTFS_DIR/bin/sh" -c "
             export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             export HOME=/root
             export TERM=xterm-256color
@@ -122,7 +124,7 @@ jobs:
 
           # Install Claude Code
           echo "Installing Claude Code v${{ env.CLAUDE_VERSION }}..."
-          "$ROOTFS_DIR/usr/bin/qemu-aarch64-static" "$ROOTFS_DIR/bin/sh" -c "
+          "$QEMU" "$ROOTFS_DIR/bin/sh" -c "
             export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             export HOME=/root
             export TERM=xterm-256color
@@ -138,7 +140,7 @@ jobs:
           echo "Verifying rootfs..."
           ls -la "$ROOTFS_DIR/bin/sh"
           ls -la "$ROOTFS_DIR/root/.tcc/versions/current/"
-          "$ROOTFS_DIR/usr/bin/qemu-aarch64-static" "$ROOTFS_DIR/bin/sh" -c "
+          "$QEMU" "$ROOTFS_DIR/bin/sh" -c "
             export PATH=/root/.tcc/versions/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             node --version && npm --version
           "
