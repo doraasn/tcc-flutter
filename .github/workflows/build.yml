@@ -78,14 +78,74 @@ jobs:
           fi
           ls -lh android/app/debug.keystore
 
-      - name: Create minimal rootfs placeholder
+      - name: Build rootfs (Alpine aarch64 + Node.js + Claude Code)
         run: |
+          # Install QEMU for aarch64 emulation
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-aarch64
+
+          ROOTFS_DIR=$(pwd)/rootfs_build
+          mkdir -p "$ROOTFS_DIR"
+
+          # Download Alpine 3.19 aarch64 minirootfs
+          echo "Downloading Alpine aarch64 minirootfs..."
+          curl -sL "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-minirootfs-3.19.1-aarch64.tar.gz" \
+            -o alpine-rootfs.tar.gz
+
+          # Extract into rootfs directory
+          echo "Extracting rootfs..."
+          tar xzf alpine-rootfs.tar.gz -C "$ROOTFS_DIR"
+
+          # Copy qemu binary for aarch64 emulation inside chroot
+          cp /usr/bin/qemu-aarch64-static "$ROOTFS_DIR/usr/bin/"
+
+          # Setup DNS
+          echo "nameserver 8.8.8.8" > "$ROOTFS_DIR/etc/resolv.conf"
+          echo "nameserver 1.1.1.1" >> "$ROOTFS_DIR/etc/resolv.conf"
+          echo "127.0.0.1 localhost" > "$ROOTFS_DIR/etc/hosts"
+          echo "tcc" > "$ROOTFS_DIR/etc/hostname"
+
+          # Install Node.js and npm inside aarch64 chroot
+          echo "Installing Node.js..."
+          chroot "$ROOTFS_DIR" /bin/sh -c "
+            apk update && apk add --no-cache nodejs npm bash
+          "
+
+          # Create TCC directory structure
+          mkdir -p "$ROOTFS_DIR/root/.tcc/versions"
+          mkdir -p "$ROOTFS_DIR/root/workspace/default/.claude"
+
+          # Install Claude Code
+          echo "Installing Claude Code v${{ env.CLAUDE_VERSION }}..."
+          chroot "$ROOTFS_DIR" /bin/sh -c "
+            npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_VERSION }} --prefix /root/.tcc/versions/v${{ env.CLAUDE_VERSION }}
+          "
+
+          # Create 'current' symlink
+          cd "$ROOTFS_DIR/root/.tcc/versions"
+          ln -sf "v${{ env.CLAUDE_VERSION }}" current
+          cd -
+
+          # Verify installation
+          echo "Verifying rootfs..."
+          ls -la "$ROOTFS_DIR/bin/sh"
+          ls -la "$ROOTFS_DIR/root/.tcc/versions/current/"
+          chroot "$ROOTFS_DIR" /bin/sh -c "node --version && npm --version"
+
+          # Remove qemu binary from rootfs (not needed at runtime, proot handles it)
+          rm -f "$ROOTFS_DIR/usr/bin/qemu-aarch64-static"
+
+          # Package rootfs
+          echo "Packaging rootfs..."
           mkdir -p assets/core
-          if [ ! -f assets/core/rootfs.tgz ]; then
-            echo "Creating placeholder rootfs..."
-            tar -czf assets/core/rootfs.tgz --files-from /dev/null
-          fi
+          tar czf assets/core/rootfs.tgz -C "$ROOTFS_DIR" .
+
+          # Cleanup
+          rm -rf "$ROOTFS_DIR" alpine-rootfs.tar.gz
+
           ls -lh assets/core/rootfs.tgz
+          echo "Rootfs built successfully!"
 
       - name: Flutter pub get
         run: flutter pub get
