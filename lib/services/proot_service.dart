@@ -73,7 +73,7 @@ class PRootService {
     // Fall back to extracting from APK assets.
     final tmpDir = Directory.systemTemp.createTempSync('tcc_proot_');
     try {
-      final byteData = await rootBundle.load('assets/core/proot');
+      final byteData = await rootBundle.load('assets/core/proot-arm64');
       final bytes = byteData.buffer.asUint8List();
 
       // Ensure parent directory exists.
