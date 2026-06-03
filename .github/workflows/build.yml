@@ -80,11 +80,6 @@ jobs:
 
       - name: Build rootfs (Alpine aarch64 + Node.js + Claude Code)
         run: |
-          # Install QEMU for aarch64 emulation
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-user-static binfmt-support
-          sudo update-binfmts --enable qemu-aarch64
-
           ROOTFS_DIR=$(pwd)/rootfs_build
           mkdir -p "$ROOTFS_DIR"
 
@@ -97,39 +92,48 @@ jobs:
           echo "Extracting rootfs..."
           tar xzf alpine-rootfs.tar.gz -C "$ROOTFS_DIR"
 
-          # Copy qemu binary for aarch64 emulation inside proot
-          cp /usr/bin/qemu-aarch64-static "$ROOTFS_DIR/usr/bin/"
-
           # Setup DNS
           echo "nameserver 8.8.8.8" > "$ROOTFS_DIR/etc/resolv.conf"
           echo "nameserver 1.1.1.1" >> "$ROOTFS_DIR/etc/resolv.conf"
           echo "127.0.0.1 localhost" > "$ROOTFS_DIR/etc/hosts"
           echo "tcc" > "$ROOTFS_DIR/etc/hostname"
 
-          # Use qemu-aarch64-static with QEMU_LD_PREFIX to resolve libs from rootfs
-          export QEMU_LD_PREFIX="$ROOTFS_DIR"
-          QEMU="$ROOTFS_DIR/usr/bin/qemu-aarch64-static"
-
-          echo "Installing Node.js..."
-          "$QEMU" "$ROOTFS_DIR/bin/sh" -c "
-            export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            export HOME=/root
-            export TERM=xterm-256color
-            apk update && apk add --no-cache nodejs npm bash
-          "
+          # Download Node.js aarch64 binary directly (no chroot needed)
+          echo "Downloading Node.js aarch64..."
+          NODE_VERSION="v20.11.1"
+          curl -sL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-arm64.tar.xz" \
+            -o nodejs.tar.xz
+          tar xJf nodejs.tar.xz
+          # Copy node/npm into rootfs
+          cp node-${NODE_VERSION}-linux-arm64/bin/node "$ROOTFS_DIR/usr/bin/"
+          cp -r node-${NODE_VERSION}-linux-arm64/lib/node_modules "$ROOTFS_DIR/usr/lib/"
+          # Create npm/npx symlinks
+          ln -sf ../lib/node_modules/npm/bin/npm-cli.js "$ROOTFS_DIR/usr/bin/npm"
+          ln -sf ../lib/node_modules/npm/bin/npx-cli.js "$ROOTFS_DIR/usr/bin/npx"
+          # Create bin symlinks for global installs
+          mkdir -p "$ROOTFS_DIR/usr/local/bin"
+          ln -sf /usr/bin/node "$ROOTFS_DIR/usr/local/bin/node"
+          ln -sf /usr/bin/npm "$ROOTFS_DIR/usr/local/bin/npm"
+          ln -sf /usr/bin/npx "$ROOTFS_DIR/usr/local/bin/npx"
 
           # Create TCC directory structure
           mkdir -p "$ROOTFS_DIR/root/.tcc/versions"
           mkdir -p "$ROOTFS_DIR/root/workspace/default/.claude"
 
-          # Install Claude Code
+          # Install Claude Code via npm (extract tarball, no chroot needed)
           echo "Installing Claude Code v${{ env.CLAUDE_VERSION }}..."
-          "$QEMU" "$ROOTFS_DIR/bin/sh" -c "
-            export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            export HOME=/root
-            export TERM=xterm-256color
-            npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_VERSION }} --prefix /root/.tcc/versions/v${{ env.CLAUDE_VERSION }}
-          "
+          CLAUDE_DIR="$ROOTFS_DIR/root/.tcc/versions/v${{ env.CLAUDE_VERSION }}"
+          mkdir -p "$CLAUDE_DIR/lib/node_modules"
+          cd "$CLAUDE_DIR/lib/node_modules"
+          npm pack "@anthropic-ai/claude-code@${{ env.CLAUDE_VERSION }}" 2>/dev/null || \
+            curl -sL "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${{ env.CLAUDE_VERSION }}.tgz" -o claude-code.tgz
+          tar xzf claude-code-*.tgz
+          mv package claude-code
+          cd -
+
+          # Create bin directory with claude symlink
+          mkdir -p "$CLAUDE_DIR/bin"
+          ln -sf ../lib/node_modules/claude-code/bin/claude "$CLAUDE_DIR/bin/claude"
 
           # Create 'current' symlink
           cd "$ROOTFS_DIR/root/.tcc/versions"
@@ -139,14 +143,8 @@ jobs:
           # Verify installation
           echo "Verifying rootfs..."
           ls -la "$ROOTFS_DIR/bin/sh"
-          ls -la "$ROOTFS_DIR/root/.tcc/versions/current/"
-          "$QEMU" "$ROOTFS_DIR/bin/sh" -c "
-            export PATH=/root/.tcc/versions/current/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            node --version && npm --version
-          "
-
-          # Remove qemu binary from rootfs (not needed at runtime, proot handles it)
-          rm -f "$ROOTFS_DIR/usr/bin/qemu-aarch64-static"
+          ls -la "$ROOTFS_DIR/usr/bin/node"
+          ls -la "$ROOTFS_DIR/root/.tcc/versions/current/bin/"
 
           # Package rootfs
           echo "Packaging rootfs..."
@@ -154,7 +152,7 @@ jobs:
           tar czf assets/core/rootfs.tgz -C "$ROOTFS_DIR" .
 
           # Cleanup
-          rm -rf "$ROOTFS_DIR" alpine-rootfs.tar.gz /tmp/proot
+          rm -rf "$ROOTFS_DIR" alpine-rootfs.tar.gz nodejs.tar.xz node-${NODE_VERSION}-linux-arm64
 
           ls -lh assets/core/rootfs.tgz
           echo "Rootfs built successfully!"
