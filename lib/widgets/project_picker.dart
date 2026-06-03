@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
+import '../models/workspace_state.dart';
 import '../providers/workspace_provider.dart';
 
 /// Modal dialog to select, create, or delete projects.

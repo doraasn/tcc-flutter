@@ -158,6 +158,10 @@ class ProcessController extends StateNotifier<ProcessState> {
     }
   }
 
+  void _onStderr(String line) {
+    // Handle stderr output if needed
+  }
+
   void _handleAssistantChunk(Map<String, dynamic> json) {
     final content = json['content'] as String? ?? '';
     if (content.isEmpty) return;

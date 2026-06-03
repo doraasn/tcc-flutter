@@ -53,7 +53,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   bool get hasOpenspec => state.openSpecSkills.isNotEmpty;
 
   /// The directory that contains session JSONL files.
-  Future<String> get sessionsDir => TccPaths.sessionsDir();
+  Future<String> get sessionsDir => TccPaths.sessionsDir;
 
   // ---------------------------------------------------------------------------
   // CRUD

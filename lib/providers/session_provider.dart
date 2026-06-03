@@ -115,14 +115,20 @@ class SessionController extends StateNotifier<AsyncValue<List<SessionInfo>>> {
 
   /// Read the first line of a JSONL session file and extract metadata.
   Future<SessionInfo?> _parseSessionFile(File file) async {
-    final firstLine = await file.openRead().transform(const LineSplitter()).first;
+    final firstLine = await file.openRead()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .first;
     final json = _parseJson(firstLine);
     if (json == null || !json.containsKey('session_id')) return null;
 
     // Try to extract the last human message as a preview.
     String lastMessage = '';
     try {
-      final allLines = await file.openRead().transform(const LineSplitter()).toList();
+      final allLines = await file.openRead()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .toList();
       for (var i = allLines.length - 1; i >= 1; i--) {
         final lineJson = _parseJson(allLines[i]);
         if (lineJson != null && lineJson['type'] == 'human') {

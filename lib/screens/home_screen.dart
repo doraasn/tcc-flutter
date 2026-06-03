@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../models/chat_message.dart';
+import '../models/workspace_state.dart';
 import '../providers/workspace_provider.dart';
 import '../providers/session_provider.dart';
 import '../providers/process_provider.dart';

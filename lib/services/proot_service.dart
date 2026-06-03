@@ -178,9 +178,10 @@ class PRootService {
 
     final tmpDir = Directory.systemTemp.createTempSync('tcc_rootfs_dl_');
     final tarball = File(p.join(tmpDir.path, 'rootfs.tar.gz'));
+    HttpClient? client;
 
     try {
-      final client = HttpClient();
+      client = HttpClient();
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
       await response.pipe(tarball.openWrite());
@@ -198,7 +199,7 @@ class PRootService {
         ], 'Exit code ${result.exitCode}: ${result.stderr}');
       }
     } finally {
-      client.close();
+      client?.close();
       if (await tmpDir.exists()) {
         await tmpDir.delete(recursive: true);
       }

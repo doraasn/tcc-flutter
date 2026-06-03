@@ -141,10 +141,10 @@ class ModelController extends StateNotifier<List<ModelConfig>> {
     final wasActive = state.any((m) => m.id == id && m.isActive);
     var remaining = state.where((m) => m.id != id).toList();
     if (wasActive && remaining.isNotEmpty) {
-      remaining = remaining.map((m, i) {
-        if (i == 0) return MapEntry(m.id, m.copyWith(isActive: true));
-        return MapEntry(m.id, m.copyWith(isActive: false));
-      }).values.toList();
+      remaining = remaining.asMap().entries.map((entry) {
+        if (entry.key == 0) return entry.value.copyWith(isActive: true);
+        return entry.value.copyWith(isActive: false);
+      }).toList();
     }
     state = remaining;
     _saveModels();

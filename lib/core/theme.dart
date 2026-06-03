@@ -31,7 +31,7 @@ class TccTheme {
         bodyColor: TccColors.onSurface,
         displayColor: TccColors.onSurface,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: TccColors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
