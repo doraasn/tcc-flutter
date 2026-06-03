@@ -27,3 +27,27 @@ android/*.keystore
 # Temporary
 *.tmp
 *.bak
+
+# Keystores (any depth)
+**/*.keystore
+android/app/debug.keystore
+
+# Build outputs
+*.apk
+*.aab
+
+# Generated native libs
+android/app/src/main/jniLibs/
+
+# Coverage
+coverage/
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+
+# FVM
+.fvm/
