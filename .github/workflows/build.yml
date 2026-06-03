@@ -97,7 +97,7 @@ jobs:
           echo "Extracting rootfs..."
           tar xzf alpine-rootfs.tar.gz -C "$ROOTFS_DIR"
 
-          # Copy qemu binary for aarch64 emulation inside chroot
+          # Copy qemu binary for aarch64 emulation inside proot
           cp /usr/bin/qemu-aarch64-static "$ROOTFS_DIR/usr/bin/"
 
           # Setup DNS
@@ -106,9 +106,16 @@ jobs:
           echo "127.0.0.1 localhost" > "$ROOTFS_DIR/etc/hosts"
           echo "tcc" > "$ROOTFS_DIR/etc/hostname"
 
-          # Install Node.js and npm inside aarch64 chroot
+          # Download proot for x86_64 (doesn't need root, unlike chroot)
+          echo "Downloading proot..."
+          curl -sL "https://proot.gitlab.io/proot/bin/proot" -o /tmp/proot
+          chmod +x /tmp/proot
+
+          PROOT="/tmp/proot -R $ROOTFS_DIR -b /dev -b /proc -b /sys -w /root"
+
+          # Install Node.js and npm inside aarch64 rootfs via proot
           echo "Installing Node.js..."
-          chroot "$ROOTFS_DIR" /bin/sh -c "
+          $PROOT /bin/sh -c "
             apk update && apk add --no-cache nodejs npm bash
           "
 
@@ -118,7 +125,7 @@ jobs:
 
           # Install Claude Code
           echo "Installing Claude Code v${{ env.CLAUDE_VERSION }}..."
-          chroot "$ROOTFS_DIR" /bin/sh -c "
+          $PROOT /bin/sh -c "
             npm install -g @anthropic-ai/claude-code@${{ env.CLAUDE_VERSION }} --prefix /root/.tcc/versions/v${{ env.CLAUDE_VERSION }}
           "
 
@@ -131,7 +138,7 @@ jobs:
           echo "Verifying rootfs..."
           ls -la "$ROOTFS_DIR/bin/sh"
           ls -la "$ROOTFS_DIR/root/.tcc/versions/current/"
-          chroot "$ROOTFS_DIR" /bin/sh -c "node --version && npm --version"
+          $PROOT /bin/sh -c "node --version && npm --version"
 
           # Remove qemu binary from rootfs (not needed at runtime, proot handles it)
           rm -f "$ROOTFS_DIR/usr/bin/qemu-aarch64-static"
@@ -142,7 +149,7 @@ jobs:
           tar czf assets/core/rootfs.tgz -C "$ROOTFS_DIR" .
 
           # Cleanup
-          rm -rf "$ROOTFS_DIR" alpine-rootfs.tar.gz
+          rm -rf "$ROOTFS_DIR" alpine-rootfs.tar.gz /tmp/proot
 
           ls -lh assets/core/rootfs.tgz
           echo "Rootfs built successfully!"
