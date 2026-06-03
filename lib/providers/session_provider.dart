@@ -78,7 +78,7 @@ class SessionController extends StateNotifier<AsyncValue<List<SessionInfo>>> {
   Future<void> loadSessions({String? projectId}) async {
     state = const AsyncValue.loading();
     try {
-      final sessionsDir = await TccPaths.sessionsDir();
+      final sessionsDir = await TccPaths.sessionsDir;
       final dir = Directory(sessionsDir);
       if (!await dir.exists()) {
         state = const AsyncValue.data([]);
