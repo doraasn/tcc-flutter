@@ -52,14 +52,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Cache pub dependencies
-        uses: actions/cache@v4
-        with:
-          path: .dart_tool/
-          key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -69,7 +61,7 @@ jobs:
 
       - name: Install Android NDK
         run: |
-          sdkmanager --install "ndk;${{ env.NDK_VERSION }}"
+          sdkmanager --install "ndk;${{ env.NDK_VERSION }}" || true
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
       - name: Setup proot (from assets)
