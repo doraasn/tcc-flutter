@@ -155,12 +155,36 @@ class PRootService {
     final binSh = File('$rootfs/bin/sh');
     if (!await binSh.exists()) {
       _error('/bin/sh still missing after extraction!');
-      _error('Listing rootfs contents:');
+      // List /bin directory contents
+      final binDir = Directory('$rootfs/bin');
+      _error('Listing /bin contents:');
       try {
-        await for (final entity in rootfsDir.list(recursive: false).take(20)) {
-          _error('  ${entity.path}');
+        await for (final entity in binDir.list(followLinks: false).take(30)) {
+          final type = entity is Link ? 'LINK' : (entity is Directory ? 'DIR' : 'FILE');
+          String target = '';
+          if (entity is Link) {
+            try { target = ' -> ${await entity.target()}'; } catch (_) {}
+          }
+          _error('  [$type] ${entity.path}$target');
         }
-      } catch (_) {}
+      } catch (e) {
+        _error('  Error listing /bin: $e');
+      }
+      // Also check /usr/bin
+      final usrBinDir = Directory('$rootfs/usr/bin');
+      _error('Listing /usr/bin contents:');
+      try {
+        await for (final entity in usrBinDir.list(followLinks: false).take(30)) {
+          final type = entity is Link ? 'LINK' : (entity is Directory ? 'DIR' : 'FILE');
+          String target = '';
+          if (entity is Link) {
+            try { target = ' -> ${await entity.target()}'; } catch (_) {}
+          }
+          _error('  [$type] ${entity.path}$target');
+        }
+      } catch (e) {
+        _error('  Error listing /usr/bin: $e');
+      }
       throw StateError(
         'Rootfs extraction failed: /bin/sh is missing. '
         'The bundled rootfs.tgz asset may be empty or corrupted. '
