@@ -15,7 +15,7 @@ def versionBuild = versionMatch.find() ? versionMatch.group(4) : '1'
 
 android {
     namespace 'com.tcc.app'
-    compileSdk 34
+    compileSdk 35
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -33,7 +33,7 @@ android {
     defaultConfig {
         applicationId 'com.tcc.app'
         minSdk 24
-        targetSdk 34
+        targetSdk 35
         versionCode versionBuild.toInteger()
         versionName "${versionMajor}.${versionMinor}.${versionPatch}"
 
