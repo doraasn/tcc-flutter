@@ -41,6 +41,14 @@ class ProcessController extends StateNotifier<ProcessState> {
 
   /// One-time initialisation (extracts rootfs if needed).
   Future<void> initialize() async {
+    // Wire up logging from PRootService to debug log panel.
+    _prootService.log = (level, msg) {
+      if (level == 'ERROR') {
+        _log.error('[PRoot] $msg');
+      } else {
+        _log.info('[PRoot] $msg');
+      }
+    };
     _log.info('Initializing PRoot service...');
     await _prootService.initialize();
     _log.info('PRoot service initialized.');

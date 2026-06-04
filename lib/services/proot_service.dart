@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/constants.dart';
+import '../providers/process_provider.dart';
 
 /// Manages the proot-based Alpine Linux environment that runs Claude Code
 /// inside the Android app sandbox.
@@ -27,6 +29,12 @@ class PRootService {
 
   bool _initialized = false;
   String? _prootPath;
+
+  /// Optional logging callback (set by ProcessController).
+  void Function(String level, String msg)? log;
+
+  void _info(String msg) => log?.call('INFO', msg);
+  void _error(String msg) => log?.call('ERROR', msg);
 
   bool get isInitialized => _initialized;
 
@@ -118,13 +126,26 @@ class PRootService {
     final rootfs = await TccPaths.rootfs;
     final rootfsDir = Directory(rootfs);
 
+    _info('Rootfs path: $rootfs');
+    _info('Rootfs exists: ${await rootfsDir.exists()}');
+
     if (await rootfsDir.exists()) {
       // Validate the rootfs is functional by checking for /bin/sh.
       final binSh = File('$rootfs/bin/sh');
-      if (await binSh.exists()) return;
+      if (await binSh.exists()) {
+        _info('Rootfs already valid, skipping extraction');
+        return;
+      }
 
-      // Broken rootfs (e.g. empty placeholder directory), delete and
-      // re-extract from assets.
+      // List what's in the rootfs
+      _error('Rootfs exists but /bin/sh missing, listing contents:');
+      try {
+        await for (final entity in rootfsDir.list(recursive: false).take(20)) {
+          _error('  ${entity.path}');
+        }
+      } catch (_) {}
+
+      // Broken rootfs, delete and re-extract.
       await rootfsDir.delete(recursive: true);
     }
 
@@ -133,12 +154,20 @@ class PRootService {
     // Validate extraction succeeded.
     final binSh = File('$rootfs/bin/sh');
     if (!await binSh.exists()) {
+      _error('/bin/sh still missing after extraction!');
+      _error('Listing rootfs contents:');
+      try {
+        await for (final entity in rootfsDir.list(recursive: false).take(20)) {
+          _error('  ${entity.path}');
+        }
+      } catch (_) {}
       throw StateError(
         'Rootfs extraction failed: /bin/sh is missing. '
         'The bundled rootfs.tgz asset may be empty or corrupted. '
         'Try clearing app data and restarting, or reinstall the APK.',
       );
     }
+    _info('Rootfs validated: /bin/sh exists');
   }
 
   /// Extracts `assets/core/rootfs.tgz` into the rootfs directory.
@@ -150,15 +179,24 @@ class PRootService {
 
     try {
       // Load archive from Flutter asset bundle.
+      _info('Loading asset: ${TccPaths.rootfsAsset}');
       final byteData = await rootBundle.load(TccPaths.rootfsAsset);
       final bytes = byteData.buffer.asUint8List();
+      _info('Asset loaded: ${bytes.length} bytes');
+
+      if (bytes.length < 100) {
+        _error('Asset is too small (${bytes.length} bytes), likely empty placeholder');
+        throw StateError('rootfs.tgz asset is empty or corrupted');
+      }
 
       await tarball.writeAsBytes(bytes, flush: true);
+      _info('Tarball written to: ${tarball.path}');
 
       // Create target directory.
       final rootfsDir = Directory(rootfs);
       await rootfsDir.create(recursive: true);
 
+      _info('Extracting tarball to: $rootfs');
       final result = await Process.run('tar', [
         'xzf',
         tarball.path,
@@ -166,6 +204,14 @@ class PRootService {
         rootfs,
         '--strip-components=0',
       ]);
+
+      _info('tar exit code: ${result.exitCode}');
+      if (result.stdout.toString().isNotEmpty) {
+        _info('tar stdout: ${result.stdout}');
+      }
+      if (result.stderr.toString().isNotEmpty) {
+        _error('tar stderr: ${result.stderr}');
+      }
 
       if (result.exitCode != 0) {
         throw ProcessException('tar', [
