@@ -120,15 +120,16 @@ jobs:
           mkdir -p "$ROOTFS_DIR/root/.tcc/versions"
           mkdir -p "$ROOTFS_DIR/root/workspace/default/.claude"
 
-          # Install Claude Code via npm (extract tarball, no chroot needed)
+          # Install Claude Code via npm registry (extract tarball, no chroot needed)
           echo "Installing Claude Code v${{ env.CLAUDE_VERSION }}..."
           CLAUDE_DIR="$ROOTFS_DIR/root/.tcc/versions/v${{ env.CLAUDE_VERSION }}"
           mkdir -p "$CLAUDE_DIR/lib/node_modules"
           cd "$CLAUDE_DIR/lib/node_modules"
-          npm pack "@anthropic-ai/claude-code@${{ env.CLAUDE_VERSION }}" 2>/dev/null || \
-            curl -sL "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-${{ env.CLAUDE_VERSION }}.tgz" -o claude-code.tgz
-          tar xzf claude-code-*.tgz
+          # Download tarball from npm registry (scoped package URL uses %2f)
+          curl -sL "https://registry.npmjs.org/@anthropic-ai%2fclaude-code/-/claude-code-${{ env.CLAUDE_VERSION }}.tgz" -o claude-code.tgz
+          tar xzf claude-code.tgz
           mv package claude-code
+          rm -f claude-code.tgz
           cd -
 
           # Create bin directory with claude symlink
