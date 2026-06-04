@@ -17,14 +17,10 @@ class MainActivity: FlutterActivity() {
                         result.success(applicationInfo.nativeLibraryDir)
                     }
                     "getExecutableDir" -> {
-                        // Return a directory where binaries can be executed.
-                        // /data/local/tmp/ is accessible to all apps and allows execution.
-                        val tmpDir = File("/data/local/tmp/tcc")
-                        if (!tmpDir.exists()) tmpDir.mkdirs()
-                        result.success(tmpDir.absolutePath)
+                        val execDir = getExecutableDir()
+                        result.success(execDir)
                     }
                     "copyAndMakeExecutable" -> {
-                        // Copy a binary to the executable directory and chmod +x.
                         val srcPath = call.argument<String>("src")
                         val dstName = call.argument<String>("dst")
                         if (srcPath == null || dstName == null) {
@@ -32,12 +28,25 @@ class MainActivity: FlutterActivity() {
                             return@setMethodCallHandler
                         }
                         try {
-                            val tmpDir = File("/data/local/tmp/tcc")
-                            if (!tmpDir.exists()) tmpDir.mkdirs()
-                            val dst = File(tmpDir, dstName)
-                            File(srcPath).copyTo(dst, overwrite = true)
-                            Runtime.getRuntime().exec(arrayOf("chmod", "755", dst.absolutePath)).waitFor()
-                            result.success(dst.absolutePath)
+                            val execDir = getExecutableDir()
+                            val dst = File(execDir, dstName)
+
+                            // Use shell commands to copy and chmod (more reliable)
+                            val copyResult = Runtime.getRuntime().exec(
+                                arrayOf("sh", "-c", "cp '$srcPath' '${dst.absolutePath}' && chmod 755 '${dst.absolutePath}'")
+                            ).waitFor()
+
+                            if (copyResult != 0) {
+                                // Fallback: try Java copy
+                                File(srcPath).copyTo(dst, overwrite = true)
+                                Runtime.getRuntime().exec(arrayOf("chmod", "755", dst.absolutePath)).waitFor()
+                            }
+
+                            if (dst.exists() && dst.length() > 0) {
+                                result.success(dst.absolutePath)
+                            } else {
+                                result.error("COPY_FAILED", "File not created: ${dst.absolutePath}", null)
+                            }
                         } catch (e: Exception) {
                             result.error("COPY_FAILED", e.message, null)
                         }
@@ -47,5 +56,35 @@ class MainActivity: FlutterActivity() {
                     }
                 }
             }
+    }
+
+    private fun getExecutableDir(): String {
+        // Try multiple locations for executable directory
+        val candidates = listOf(
+            "/data/local/tmp/tcc",
+            "${cacheDir.absolutePath}/exec",
+            "${filesDir.absolutePath}/exec"
+        )
+
+        for (path in candidates) {
+            try {
+                val dir = File(path)
+                if (!dir.exists()) dir.mkdirs()
+                if (dir.exists() && dir.canWrite()) {
+                    // Test if we can execute from this directory
+                    val testFile = File(dir, "test_exec")
+                    testFile.writeText("#!/bin/sh\necho ok")
+                    Runtime.getRuntime().exec(arrayOf("chmod", "755", testFile.absolutePath)).waitFor()
+                    val testResult = Runtime.getRuntime().exec(arrayOf(testFile.absolutePath)).waitFor()
+                    testFile.delete()
+                    if (testResult == 0) {
+                        return path
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Last resort: return the first candidate even if untested
+        return candidates[0]
     }
 }
