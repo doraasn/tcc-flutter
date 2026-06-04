@@ -133,6 +133,18 @@ jobs:
           rm -f claude-code.tgz
           cd -
 
+          # Download native binary for aarch64-musl
+          echo "Downloading native Claude Code binary..."
+          mkdir -p "$CLAUDE_DIR/lib/node_modules/@anthropic-ai/claude-code-linux-arm64-musl"
+          curl -sL "https://registry.npmjs.org/@anthropic-ai%2fclaude-code-linux-arm64-musl/-/claude-code-linux-arm64-musl-${{ env.CLAUDE_VERSION }}.tgz" -o native.tgz
+          tar xzf native.tgz --strip-components=1 -C "$CLAUDE_DIR/lib/node_modules/@anthropic-ai/claude-code-linux-arm64-musl"
+          rm -f native.tgz
+
+          # Create claude -> claude.exe symlink (postinstall creates .exe)
+          cd "$CLAUDE_DIR/lib/node_modules/claude-code/bin"
+          ln -sf claude.exe claude 2>/dev/null || true
+          cd -
+
           # Create bin directory with claude symlink
           mkdir -p "$CLAUDE_DIR/bin"
           ln -sf ../lib/node_modules/claude-code/bin/claude "$CLAUDE_DIR/bin/claude"

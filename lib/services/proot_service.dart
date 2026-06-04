@@ -34,7 +34,7 @@ class PRootService {
     await _ensureProotBinary();
     await _ensureRootfs();
     _setupDns();
-    // Node.js and Claude Code are bundled in rootfs by CI — no runtime install needed.
+    await _ensureClaudeSymlink();
 
     _initialized = true;
     _info('PRoot service initialized successfully');
@@ -152,6 +152,26 @@ class PRootService {
       }
     } finally {
       if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Claude Code symlink fix
+  // ---------------------------------------------------------------------------
+
+  /// Ensures the `claude` -> `claude.exe` symlink exists in the bin directory.
+  /// The postinstall script creates `claude.exe` but the symlink may be missing.
+  Future<void> _ensureClaudeSymlink() async {
+    final rootfs = await TccPaths.rootfs;
+    final claudeBinDir = '$rootfs/root/.tcc/versions/current/lib/node_modules/claude-code/bin';
+
+    final claudeExe = File('$claudeBinDir/claude.exe');
+    final claudeLink = File('$claudeBinDir/claude');
+
+    if (await claudeExe.exists() && !await claudeLink.exists()) {
+      _info('Creating claude -> claude.exe symlink');
+      // Use Process.run to create symlink (Dart doesn't have native symlink API)
+      await Process.run('ln', ['-sf', 'claude.exe', claudeLink.path]);
     }
   }
 
