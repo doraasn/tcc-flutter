@@ -64,12 +64,13 @@ jobs:
           sdkmanager --install "ndk;${{ env.NDK_VERSION }}" || true
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Setup proot (from assets)
+      - name: Setup proot (as native library)
         run: |
+          # Rename to .so so Android extracts it to nativeLibraryDir (always executable)
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp assets/core/proot-arm64 android/app/src/main/jniLibs/arm64-v8a/proot-arm64
-          chmod 755 android/app/src/main/jniLibs/arm64-v8a/proot-arm64
-          ls -lh android/app/src/main/jniLibs/arm64-v8a/proot-arm64
+          cp assets/core/proot-arm64 android/app/src/main/jniLibs/arm64-v8a/libproot.so
+          chmod 755 android/app/src/main/jniLibs/arm64-v8a/libproot.so
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/libproot.so
 
       - name: Create debug keystore
         run: |

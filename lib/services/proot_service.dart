@@ -1,40 +1,24 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/constants.dart';
-import '../providers/process_provider.dart';
 
 const _nativeChannel = MethodChannel('com.tcc.app/native');
 
 /// Manages the proot-based Alpine Linux environment that runs Claude Code
 /// inside the Android app sandbox.
-///
-/// Responsibilities:
-/// - Extract the proot binary from APK assets on first run.
-/// - Extract the Alpine rootfs from `assets/core/rootfs.tgz`.
-/// - Configure DNS resolution (`resolv.conf`, `/etc/hosts`).
-/// - Install Node.js and Claude Code inside the rootfs.
-/// - Version management: symlink `current/` to the active version directory.
-/// - Provide a [runInRootfs] helper for arbitrary commands.
 class PRootService {
   PRootService._();
-
   static final PRootService _instance = PRootService._();
   factory PRootService() => _instance;
-
-  // ---------------------------------------------------------------------------
-  // State
-  // ---------------------------------------------------------------------------
 
   bool _initialized = false;
   String? _prootPath;
 
-  /// Optional logging callback (set by ProcessController).
+  /// Optional logging callback.
   void Function(String level, String msg)? log;
-
   void _info(String msg) => log?.call('INFO', msg);
   void _error(String msg) => log?.call('ERROR', msg);
 
@@ -44,103 +28,75 @@ class PRootService {
   // Initialization
   // ---------------------------------------------------------------------------
 
-  /// One-shot initialization.  Safe to call multiple times.
-  ///
-  /// 1. Extracts proot binary from APK assets (if not already on disk).
-  /// 2. Extracts the rootfs archive (if not already on disk).
-  /// 3. Sets up DNS resolution inside the rootfs.
   Future<void> initialize() async {
     if (_initialized) return;
 
     await _ensureProotBinary();
     await _ensureRootfs();
-    await _setupDns();
-    await _installNodeJs();
-    await _installClaudeCode();
+    _setupDns();
+    // Node.js and Claude Code are bundled in rootfs by CI — no runtime install needed.
 
     _initialized = true;
+    _info('PRoot service initialized successfully');
   }
 
   // ---------------------------------------------------------------------------
   // proot binary
   // ---------------------------------------------------------------------------
 
-  /// Ensures the proot binary is available and executable.
-  ///
-  /// Checks in order:
-  /// 1. Termux proot (most reliable)
-  /// 2. Native library directory (APK's jniLibs, always executable)
-  /// 3. Cached copy (may fail on newer Android due to SELinux)
   Future<void> _ensureProotBinary() async {
-    // 1. Try Termux-installed proot first (already executable, most reliable).
+    // 1. Termux proot (most reliable).
     const termuxProot = '/data/data/com.termux/files/usr/bin/proot';
     if (await File(termuxProot).exists()) {
-      _info('Using Termux proot: $termuxProot');
       _prootPath = termuxProot;
+      _info('Using Termux proot: $termuxProot');
       return;
     }
 
-    // 2. Try native library directory (APK's jniLibs are always executable).
+    // 2. Native library dir — Android extracts .so files from jniLibs here.
+    //    CI renames proot to libproot.so so it gets extracted.
     try {
       final nativeDir = await _nativeChannel.invokeMethod<String>('getNativeLibraryDir');
       if (nativeDir != null) {
-        final nativeProot = '$nativeDir/proot-arm64';
-        _info('Checking native lib dir: $nativeProot');
-        if (await File(nativeProot).exists()) {
-          _prootPath = nativeProot;
-          _info('Using native proot: $nativeProot');
-          return;
-        }
-        // Also check without -arm64 suffix
-        final nativeProotAlt = '$nativeDir/proot';
-        if (await File(nativeProotAlt).exists()) {
-          _prootPath = nativeProotAlt;
-          _info('Using native proot: $nativeProotAlt');
-          return;
+        for (final name in ['libproot.so', 'proot-arm64', 'proot']) {
+          final path = '$nativeDir/$name';
+          if (await File(path).exists()) {
+            _prootPath = path;
+            _info('Using native proot: $path');
+            return;
+          }
         }
       }
     } catch (e) {
-      _info('Could not get native library dir: $e');
+      _info('Native channel error: $e');
     }
 
-    // 3. Try cached copy (may fail on newer Android due to SELinux).
-    final prootFile = File(await TccPaths.prootBinary);
-    if (await prootFile.exists() && await prootFile.length() > 0) {
-      _info('Trying cached proot: ${prootFile.path}');
-      _prootPath = prootFile.path;
+    // 3. Cached copy from previous extraction (may fail on newer Android).
+    final cachedProot = File(await TccPaths.prootBinary);
+    if (await cachedProot.exists() && await cachedProot.length() > 1000) {
+      _prootPath = cachedProot.path;
+      _info('Using cached proot: ${cachedProot.path}');
       return;
     }
 
-    // 4. Extract from APK assets.
+    // 4. Extract from APK assets as last resort.
     _info('Extracting proot from APK assets...');
     final byteData = await rootBundle.load('assets/core/proot-arm64');
     final bytes = byteData.buffer.asUint8List();
-    _info('Proot asset size: ${bytes.length} bytes');
-
-    await prootFile.parent.create(recursive: true);
-    await prootFile.writeAsBytes(bytes, flush: true);
-
-    // Try to make executable.
-    final chmodResult = await Process.run('chmod', ['755', prootFile.path]);
-    _info('chmod exit code: ${chmodResult.exitCode}');
-
-    _prootPath = prootFile.path;
+    await cachedProot.parent.create(recursive: true);
+    await cachedProot.writeAsBytes(bytes, flush: true);
+    await Process.run('chmod', ['755', cachedProot.path]);
+    _prootPath = cachedProot.path;
+    _info('Extracted proot to: ${cachedProot.path}');
   }
 
-  /// Returns the absolute path to the proot binary.
   Future<String> findProot() async {
     if (_prootPath != null && await File(_prootPath!).exists()) {
       return _prootPath!;
     }
-
-    // Re-run extraction logic.
     await _ensureProotBinary();
     if (_prootPath == null) {
-      throw StateError(
-        'proot binary not found.  '
-        'Ensure assets/core/proot exists in the APK or install via '
-        '`pkg install proot` in Termux.',
-      );
+      throw StateError('proot binary not found.');
     }
     return _prootPath!;
   }
@@ -149,307 +105,88 @@ class PRootService {
   // Rootfs
   // ---------------------------------------------------------------------------
 
-  /// Extracts the Alpine rootfs from bundled assets if it does not yet exist.
   Future<void> _ensureRootfs() async {
     final rootfs = await TccPaths.rootfs;
     final rootfsDir = Directory(rootfs);
 
-    _info('Rootfs path: $rootfs');
-    _info('Rootfs exists: ${await rootfsDir.exists()}');
-
     if (await rootfsDir.exists()) {
-      // Validate the rootfs is functional by checking for /bin/busybox.
-      // In Alpine, /bin/sh -> /bin/busybox, so we check the actual binary.
-      final busybox = File('$rootfs/bin/busybox');
-      if (await busybox.exists()) {
-        _info('Rootfs already valid (busybox exists), skipping extraction');
+      // Check for busybox (the actual binary, not a symlink).
+      if (await File('$rootfs/bin/busybox').exists()) {
+        _info('Rootfs valid (busybox exists)');
         return;
       }
-
-      // List what's in the rootfs
-      _error('Rootfs exists but /bin/sh missing, listing contents:');
-      try {
-        await for (final entity in rootfsDir.list(recursive: false).take(20)) {
-          _error('  ${entity.path}');
-        }
-      } catch (_) {}
-
-      // Broken rootfs, delete and re-extract.
+      // Broken rootfs — delete and re-extract.
+      _info('Rootfs broken, re-extracting...');
       await rootfsDir.delete(recursive: true);
     }
 
     await _extractRootfsFromAssets();
 
-    // Validate extraction succeeded (check for /bin/busybox, the actual binary).
-    final busybox = File('$rootfs/bin/busybox');
-    if (!await busybox.exists()) {
-      _error('/bin/busybox still missing after extraction!');
-      // List /bin directory to see what's there
-      final binDir = Directory('$rootfs/bin');
-      _error('Listing /bin (first 10 entries):');
-      try {
-        var count = 0;
-        await for (final entity in binDir.list(followLinks: false)) {
-          if (count++ >= 10) break;
-          final type = entity is Link ? 'LINK' : (entity is Directory ? 'DIR' : 'FILE');
-          String target = '';
-          if (entity is Link) {
-            try { target = ' -> ${await entity.target()}'; } catch (_) {}
-          }
-          _error('  [$type] ${entity.path}$target');
-        }
-      } catch (e) {
-        _error('  Error listing /bin: $e');
-      }
-      throw StateError(
-        'Rootfs extraction failed: /bin/busybox is missing. '
-        'The bundled rootfs.tgz asset may be corrupted. '
-        'Try clearing app data and restarting, or reinstall the APK.',
-      );
+    if (!await File('$rootfs/bin/busybox').exists()) {
+      throw StateError('Rootfs extraction failed: /bin/busybox missing.');
     }
-    _info('Rootfs validated: /bin/sh exists');
+    _info('Rootfs extracted and validated');
   }
 
-  /// Extracts `assets/core/rootfs.tgz` into the rootfs directory.
   Future<void> _extractRootfsFromAssets() async {
     final rootfs = await TccPaths.rootfs;
-
     final tmpDir = Directory.systemTemp.createTempSync('tcc_rootfs_');
     final tarball = File(p.join(tmpDir.path, 'rootfs.tgz'));
 
     try {
-      // Load archive from Flutter asset bundle.
-      _info('Loading asset: ${TccPaths.rootfsAsset}');
       final byteData = await rootBundle.load(TccPaths.rootfsAsset);
       final bytes = byteData.buffer.asUint8List();
-      _info('Asset loaded: ${bytes.length} bytes');
+      _info('Rootfs asset: ${bytes.length} bytes');
 
-      if (bytes.length < 100) {
-        _error('Asset is too small (${bytes.length} bytes), likely empty placeholder');
-        throw StateError('rootfs.tgz asset is empty or corrupted');
+      if (bytes.length < 1000) {
+        throw StateError('rootfs.tgz is too small (${bytes.length} bytes)');
       }
 
       await tarball.writeAsBytes(bytes, flush: true);
-      _info('Tarball written to: ${tarball.path}');
+      await Directory(rootfs).create(recursive: true);
 
-      // Create target directory.
-      final rootfsDir = Directory(rootfs);
-      await rootfsDir.create(recursive: true);
-
-      _info('Extracting tarball to: $rootfs');
       final result = await Process.run('tar', [
-        'xzf',
-        tarball.path,
-        '-C',
-        rootfs,
-        '--strip-components=0',
+        'xzf', tarball.path, '-C', rootfs, '--strip-components=0',
       ]);
 
-      _info('tar exit code: ${result.exitCode}');
-      if (result.stdout.toString().isNotEmpty) {
-        _info('tar stdout: ${result.stdout}');
-      }
-      if (result.stderr.toString().isNotEmpty) {
-        _error('tar stderr: ${result.stderr}');
-      }
-
       if (result.exitCode != 0) {
-        throw ProcessException('tar', [
-          'xzf', tarball.path, '-C', rootfs, '--strip-components=0',
-        ], 'Exit code ${result.exitCode}: ${result.stderr}');
+        throw ProcessException('tar', [], 'Exit ${result.exitCode}: ${result.stderr}');
       }
     } finally {
-      if (await tmpDir.exists()) {
-        await tmpDir.delete(recursive: true);
-      }
+      if (await tmpDir.exists()) await tmpDir.delete(recursive: true);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // DNS setup
+  // DNS
   // ---------------------------------------------------------------------------
 
-  /// Writes `/etc/resolv.conf` and `/etc/hosts` inside the rootfs so that
-  /// network access works inside proot.
-  Future<void> _setupDns() async {
+  void _setupDns() {
+    // This runs synchronously using file I/O — no proot needed.
+    // Called after rootfs is extracted.
+    _setupDnsAsync();
+  }
+
+  Future<void> _setupDnsAsync() async {
     final rootfs = await TccPaths.rootfs;
 
-    // /etc/resolv.conf — use Google and Cloudflare public DNS.
     final resolvConf = File(p.join(rootfs, 'etc', 'resolv.conf'));
     await resolvConf.parent.create(recursive: true);
     await resolvConf.writeAsString(
-      'nameserver 8.8.8.8\n'
-      'nameserver 1.1.1.1\n'
-      'nameserver 2001:4860:4860::8888\n',
+      'nameserver 8.8.8.8\nnameserver 1.1.1.1\n',
     );
 
-    // /etc/hosts
     final hosts = File(p.join(rootfs, 'etc', 'hosts'));
-    await hosts.writeAsString(
-      '127.0.0.1 localhost\n'
-      '::1 localhost\n',
-    );
+    await hosts.writeAsString('127.0.0.1 localhost\n::1 localhost\n');
 
-    // /etc/hostname
     final hostname = File(p.join(rootfs, 'etc', 'hostname'));
     await hostname.writeAsString('tcc\n');
-  }
-
-  // ---------------------------------------------------------------------------
-  // Node.js installation
-  // ---------------------------------------------------------------------------
-
-  /// Installs Node.js inside the rootfs.
-  ///
-  /// Idempotent — skips if `node` is already available in the rootfs.
-  /// The CI build bundles Node.js at /usr/bin/node, so this is usually a no-op.
-  Future<void> _installNodeJs() async {
-    final rootfs = await TccPaths.rootfs;
-
-    // Check if node exists at common locations.
-    final nodeInUsrBin = File('$rootfs/usr/bin/node');
-    if (await nodeInUsrBin.exists()) {
-      _info('Node.js already installed at /usr/bin/node');
-      return;
-    }
-
-    final nodeInVersionedBin = File(await TccPaths.nodeBinary);
-    if (await nodeInVersionedBin.exists()) {
-      _info('Node.js already installed at versioned path');
-      return;
-    }
-
-    // Node.js not found — try to install via apk (requires working proot).
-    _info('Node.js not found, attempting apk install...');
-    final apkCache = Directory(p.join(rootfs, 'var', 'cache', 'apk'));
-    await apkCache.create(recursive: true);
-
-    final result = await runInRootfs(
-      'apk update && apk add --no-cache nodejs npm',
-    );
-
-    if (result.exitCode != 0) {
-      throw ProcessException('apk', ['add', 'nodejs', 'npm'],
-          'Failed to install Node.js: ${result.stderr}');
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Claude Code installation
-  // ---------------------------------------------------------------------------
-
-  /// Installs or updates the Claude Code npm package inside the versioned
-  /// directory.  The `current/` symlink is updated to point at the new
-  /// version directory.
-  Future<void> _installClaudeCode() async {
-    final versionsDir = await TccPaths.versionsDir;
-    final currentDir = await TccPaths.currentVersion;
-
-    // Check if Claude Code is already installed at the current symlink.
-    final claudeBin = File('$currentDir/bin/claude');
-    if (await claudeBin.exists()) {
-      _info('Claude Code already installed at $currentDir');
-      return;
-    }
-
-    // Check if there's a versioned directory with Claude Code.
-    final versionsDirObj = Directory(versionsDir);
-    if (await versionsDirObj.exists()) {
-      await for (final entity in versionsDirObj.list()) {
-        if (entity is Directory && entity.path != currentDir) {
-          final bin = File('${entity.path}/bin/claude');
-          if (await bin.exists()) {
-            _info('Found existing Claude Code at ${entity.path}, updating symlink');
-            await _switchCurrentSymlink(entity.path);
-            return;
-          }
-        }
-      }
-    }
-
-    // Claude Code not found — try to install via npm (requires working proot).
-    _info('Claude Code not found, attempting npm install...');
-    await versionsDirObj.create(recursive: true);
-
-    final versionDir = Directory(p.join(
-      versionsDir,
-      'claude-${DateTime.now().millisecondsSinceEpoch}',
-    ));
-    await versionDir.create(recursive: true);
-
-    final binDir = Directory(p.join(versionDir.path, 'bin'));
-    await binDir.create(recursive: true);
-
-    final result = await runInRootfs(
-      'npm install '
-      '--prefix ${versionDir.path} '
-      '-g @anthropic-ai/claude-code',
-    );
-
-    if (result.exitCode != 0) {
-      throw ProcessException('npm', ['install', '@anthropic-ai/claude-code'],
-          'Failed to install Claude Code: ${result.stderr}');
-    }
-
-    // Run the native binary postinstall (required by Claude Code).
-    final installScript = p.join(
-      versionDir.path,
-      'lib',
-      'node_modules',
-      '@anthropic-ai',
-      'claude-code',
-      'install.cjs',
-    );
-    if (await File(installScript).exists()) {
-      await runInRootfs('node $installScript');
-    }
-
-    // Atomically update the 'current' symlink.
-    await _switchCurrentSymlink(versionDir.path);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Version symlink management
-  // ---------------------------------------------------------------------------
-
-  /// Atomically switches the `current` symlink to point at [newVersionPath].
-  ///
-  /// Uses a temp-rename strategy to avoid partial updates:
-  /// 1. Create `current_new` symlink.
-  /// 2. Rename `current_new` -> `current` (atomic on Linux).
-  Future<void> _switchCurrentSymlink(String newVersionPath) async {
-    final versionsDir = await TccPaths.versionsDir;
-    final currentDir = p.join(versionsDir, 'current');
-    final tempLink = p.join(versionsDir, 'current_new');
-
-    // Remove stale temp link if it exists.
-    final tempLinkDir = Directory(tempLink);
-    if (await tempLinkDir.exists()) {
-      await tempLinkDir.delete();
-    }
-
-    // Create a temporary symlink.
-    final result = await Process.run('ln', ['-sfn', newVersionPath, tempLink]);
-    if (result.exitCode != 0) {
-      throw ProcessException(
-          'ln', ['-sfn', newVersionPath, tempLink], result.stderr);
-    }
-
-    // Atomically rename into place.
-    final renameResult = await Process.run('mv', ['-Tf', tempLink, currentDir]);
-    if (renameResult.exitCode != 0) {
-      throw ProcessException(
-          'mv', ['-Tf', tempLink, currentDir], renameResult.stderr);
-    }
   }
 
   // ---------------------------------------------------------------------------
   // Running commands inside rootfs
   // ---------------------------------------------------------------------------
 
-  /// Runs an arbitrary shell command inside the proot environment.
-  ///
-  /// Uses `/bin/sh -c` so pipelines and shell syntax work.
   Future<ProcessResult> runInRootfs(String command) async {
     final proot = await findProot();
     final rootfs = await TccPaths.rootfs;
@@ -463,9 +200,4 @@ class PRootService {
       '/bin/sh', '-c', command,
     ]);
   }
-
-  // ---------------------------------------------------------------------------
-  // Cleanup
-  // ---------------------------------------------------------------------------
-
 }
