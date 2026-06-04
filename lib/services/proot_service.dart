@@ -47,20 +47,37 @@ class PRootService {
   Future<void> _ensureProotBinary() async {
     // 1. Termux proot (most reliable).
     const termuxProot = '/data/data/com.termux/files/usr/bin/proot';
-    if (await File(termuxProot).exists()) {
+    final termuxExists = await File(termuxProot).exists();
+    _info('Termux proot exists: $termuxExists');
+    if (termuxExists) {
       _prootPath = termuxProot;
       _info('Using Termux proot: $termuxProot');
       return;
     }
 
     // 2. Native library dir — Android extracts .so files from jniLibs here.
-    //    CI renames proot to libproot.so so it gets extracted.
     try {
       final nativeDir = await _nativeChannel.invokeMethod<String>('getNativeLibraryDir');
+      _info('Native lib dir: $nativeDir');
       if (nativeDir != null) {
+        // List all files in native lib dir for debugging
+        try {
+          final dir = Directory(nativeDir);
+          if (await dir.exists()) {
+            final files = await dir.list().map((e) => e.path).toList();
+            _info('Native lib dir contents: ${files.join(", ")}');
+          } else {
+            _error('Native lib dir does not exist: $nativeDir');
+          }
+        } catch (e) {
+          _error('Error listing native lib dir: $e');
+        }
+
         for (final name in ['libproot.so', 'proot-arm64', 'proot']) {
           final path = '$nativeDir/$name';
-          if (await File(path).exists()) {
+          final exists = await File(path).exists();
+          _info('Checking $path: exists=$exists');
+          if (exists) {
             _prootPath = path;
             _info('Using native proot: $path');
             return;
@@ -68,12 +85,15 @@ class PRootService {
         }
       }
     } catch (e) {
-      _info('Native channel error: $e');
+      _error('Native channel error: $e');
     }
 
     // 3. Cached copy from previous extraction (may fail on newer Android).
     final cachedProot = File(await TccPaths.prootBinary);
-    if (await cachedProot.exists() && await cachedProot.length() > 1000) {
+    final cachedExists = await cachedProot.exists();
+    final cachedSize = cachedExists ? await cachedProot.length() : 0;
+    _info('Cached proot: exists=$cachedExists, size=$cachedSize');
+    if (cachedExists && cachedSize > 1000) {
       _prootPath = cachedProot.path;
       _info('Using cached proot: ${cachedProot.path}');
       return;
@@ -83,6 +103,7 @@ class PRootService {
     _info('Extracting proot from APK assets...');
     final byteData = await rootBundle.load('assets/core/proot-arm64');
     final bytes = byteData.buffer.asUint8List();
+    _info('Proot asset size: ${bytes.length} bytes');
     await cachedProot.parent.create(recursive: true);
     await cachedProot.writeAsBytes(bytes, flush: true);
     await Process.run('chmod', ['755', cachedProot.path]);
