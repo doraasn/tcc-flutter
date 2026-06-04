@@ -130,10 +130,11 @@ class PRootService {
     _info('Rootfs exists: ${await rootfsDir.exists()}');
 
     if (await rootfsDir.exists()) {
-      // Validate the rootfs is functional by checking for /bin/sh.
-      final binSh = File('$rootfs/bin/sh');
-      if (await binSh.exists()) {
-        _info('Rootfs already valid, skipping extraction');
+      // Validate the rootfs is functional by checking for /bin/busybox.
+      // In Alpine, /bin/sh -> /bin/busybox, so we check the actual binary.
+      final busybox = File('$rootfs/bin/busybox');
+      if (await busybox.exists()) {
+        _info('Rootfs already valid (busybox exists), skipping extraction');
         return;
       }
 
@@ -151,15 +152,17 @@ class PRootService {
 
     await _extractRootfsFromAssets();
 
-    // Validate extraction succeeded.
-    final binSh = File('$rootfs/bin/sh');
-    if (!await binSh.exists()) {
-      _error('/bin/sh still missing after extraction!');
-      // List /bin directory contents
+    // Validate extraction succeeded (check for /bin/busybox, the actual binary).
+    final busybox = File('$rootfs/bin/busybox');
+    if (!await busybox.exists()) {
+      _error('/bin/busybox still missing after extraction!');
+      // List /bin directory to see what's there
       final binDir = Directory('$rootfs/bin');
-      _error('Listing /bin contents:');
+      _error('Listing /bin (first 10 entries):');
       try {
-        await for (final entity in binDir.list(followLinks: false).take(30)) {
+        var count = 0;
+        await for (final entity in binDir.list(followLinks: false)) {
+          if (count++ >= 10) break;
           final type = entity is Link ? 'LINK' : (entity is Directory ? 'DIR' : 'FILE');
           String target = '';
           if (entity is Link) {
@@ -170,24 +173,9 @@ class PRootService {
       } catch (e) {
         _error('  Error listing /bin: $e');
       }
-      // Also check /usr/bin
-      final usrBinDir = Directory('$rootfs/usr/bin');
-      _error('Listing /usr/bin contents:');
-      try {
-        await for (final entity in usrBinDir.list(followLinks: false).take(30)) {
-          final type = entity is Link ? 'LINK' : (entity is Directory ? 'DIR' : 'FILE');
-          String target = '';
-          if (entity is Link) {
-            try { target = ' -> ${await entity.target()}'; } catch (_) {}
-          }
-          _error('  [$type] ${entity.path}$target');
-        }
-      } catch (e) {
-        _error('  Error listing /usr/bin: $e');
-      }
       throw StateError(
-        'Rootfs extraction failed: /bin/sh is missing. '
-        'The bundled rootfs.tgz asset may be empty or corrupted. '
+        'Rootfs extraction failed: /bin/busybox is missing. '
+        'The bundled rootfs.tgz asset may be corrupted. '
         'Try clearing app data and restarting, or reinstall the APK.',
       );
     }

@@ -141,6 +141,17 @@ jobs:
           ln -sf "v${{ env.CLAUDE_VERSION }}" current
           cd -
 
+          # Verify busybox exists (critical - all /bin commands are symlinks to it)
+          echo "Verifying busybox..."
+          if [ ! -f "$ROOTFS_DIR/bin/busybox" ]; then
+            echo "ERROR: /bin/busybox missing! Checking if it's a symlink..."
+            ls -la "$ROOTFS_DIR/bin/busybox" 2>/dev/null || echo "Not found at all"
+            # Try to find it elsewhere
+            find "$ROOTFS_DIR" -name "busybox" -type f 2>/dev/null || echo "No busybox binary found anywhere"
+          else
+            echo "busybox OK: $(ls -la "$ROOTFS_DIR/bin/busybox")"
+          fi
+
           # Verify installation
           echo "Verifying rootfs..."
           ls -la "$ROOTFS_DIR/bin/sh"
