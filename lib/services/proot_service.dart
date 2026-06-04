@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import '../core/constants.dart';
 import '../providers/process_provider.dart';
 
+const _nativeChannel = MethodChannel('com.tcc.app/native');
+
 /// Manages the proot-based Alpine Linux environment that runs Claude Code
 /// inside the Android app sandbox.
 ///
@@ -63,9 +65,14 @@ class PRootService {
   // proot binary
   // ---------------------------------------------------------------------------
 
-  /// Ensures the proot binary is extracted from APK assets and is executable.
+  /// Ensures the proot binary is available and executable.
+  ///
+  /// Checks in order:
+  /// 1. Termux proot (most reliable)
+  /// 2. Native library directory (APK's jniLibs, always executable)
+  /// 3. Cached copy (may fail on newer Android due to SELinux)
   Future<void> _ensureProotBinary() async {
-    // Try Termux-installed proot first (already executable, most reliable).
+    // 1. Try Termux-installed proot first (already executable, most reliable).
     const termuxProot = '/data/data/com.termux/files/usr/bin/proot';
     if (await File(termuxProot).exists()) {
       _info('Using Termux proot: $termuxProot');
@@ -73,58 +80,51 @@ class PRootService {
       return;
     }
 
-    final prootFile = File(await TccPaths.prootBinary);
-    if (await prootFile.exists() && await prootFile.length() > 0) {
-      // Check if it's executable.
-      final stat = await prootFile.stat();
-      final isExec = stat.mode & 0x49 != 0; // Check owner/group/other execute bits
-      if (isExec) {
-        _info('Using cached proot: ${prootFile.path}');
-        _prootPath = prootFile.path;
-        return;
-      }
-      _info('Cached proot exists but not executable, re-extracting...');
-      await prootFile.delete();
-    }
-
-    // Extract from APK assets to cache directory (allows execution on newer Android).
-    _info('Extracting proot from APK assets...');
+    // 2. Try native library directory (APK's jniLibs are always executable).
     try {
-      final byteData = await rootBundle.load('assets/core/proot-arm64');
-      final bytes = byteData.buffer.asUint8List();
-      _info('Proot asset size: ${bytes.length} bytes');
-
-      await prootFile.parent.create(recursive: true);
-      await prootFile.writeAsBytes(bytes, flush: true);
-
-      // Try to make executable.
-      final chmodResult = await Process.run('chmod', ['755', prootFile.path]);
-      _info('chmod exit code: ${chmodResult.exitCode}');
-
-      // Verify it's actually executable.
-      final testResult = await Process.run(prootFile.path, ['--version']);
-      _info('proot --version exit code: ${testResult.exitCode}');
-
-      if (testResult.exitCode != 0) {
-        _error('proot not executable after chmod, trying alternative...');
-        // Try copying to code_cache which might have different SELinux context
-        final altPath = '${Directory.systemTemp.path}/proot';
-        await File(altPath).writeAsBytes(bytes, flush: true);
-        await Process.run('chmod', ['755', altPath]);
-        final altTest = await Process.run(altPath, ['--version']);
-        if (altTest.exitCode == 0) {
-          _info('Alternative proot path works: $altPath');
-          _prootPath = altPath;
+      final nativeDir = await _nativeChannel.invokeMethod<String>('getNativeLibraryDir');
+      if (nativeDir != null) {
+        final nativeProot = '$nativeDir/proot-arm64';
+        _info('Checking native lib dir: $nativeProot');
+        if (await File(nativeProot).exists()) {
+          _prootPath = nativeProot;
+          _info('Using native proot: $nativeProot');
           return;
         }
-        throw StateError('Cannot execute proot binary. SELinux may be blocking execution.');
+        // Also check without -arm64 suffix
+        final nativeProotAlt = '$nativeDir/proot';
+        if (await File(nativeProotAlt).exists()) {
+          _prootPath = nativeProotAlt;
+          _info('Using native proot: $nativeProotAlt');
+          return;
+        }
       }
-
-      _prootPath = prootFile.path;
     } catch (e) {
-      _error('Failed to extract proot: $e');
-      rethrow;
+      _info('Could not get native library dir: $e');
     }
+
+    // 3. Try cached copy (may fail on newer Android due to SELinux).
+    final prootFile = File(await TccPaths.prootBinary);
+    if (await prootFile.exists() && await prootFile.length() > 0) {
+      _info('Trying cached proot: ${prootFile.path}');
+      _prootPath = prootFile.path;
+      return;
+    }
+
+    // 4. Extract from APK assets.
+    _info('Extracting proot from APK assets...');
+    final byteData = await rootBundle.load('assets/core/proot-arm64');
+    final bytes = byteData.buffer.asUint8List();
+    _info('Proot asset size: ${bytes.length} bytes');
+
+    await prootFile.parent.create(recursive: true);
+    await prootFile.writeAsBytes(bytes, flush: true);
+
+    // Try to make executable.
+    final chmodResult = await Process.run('chmod', ['755', prootFile.path]);
+    _info('chmod exit code: ${chmodResult.exitCode}');
+
+    _prootPath = prootFile.path;
   }
 
   /// Returns the absolute path to the proot binary.
