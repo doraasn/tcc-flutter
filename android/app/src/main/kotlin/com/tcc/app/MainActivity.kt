@@ -68,14 +68,16 @@ class MainActivity: FlutterActivity() {
 
         for (path in candidates) {
             try {
+                // Use shell to create directory (more reliable than File.mkdirs())
+                Runtime.getRuntime().exec(arrayOf("sh", "-c", "mkdir -p '$path'")).waitFor()
+
                 val dir = File(path)
-                if (!dir.exists()) dir.mkdirs()
                 if (dir.exists() && dir.canWrite()) {
                     // Test if we can execute from this directory
                     val testFile = File(dir, "test_exec")
                     testFile.writeText("#!/bin/sh\necho ok")
-                    Runtime.getRuntime().exec(arrayOf("chmod", "755", testFile.absolutePath)).waitFor()
-                    val testResult = Runtime.getRuntime().exec(arrayOf(testFile.absolutePath)).waitFor()
+                    Runtime.getRuntime().exec(arrayOf("sh", "-c", "chmod 755 '${testFile.absolutePath}'")).waitFor()
+                    val testResult = Runtime.getRuntime().exec(arrayOf("sh", "-c", "'${testFile.absolutePath}'")).waitFor()
                     testFile.delete()
                     if (testResult == 0) {
                         return path
