@@ -65,37 +65,65 @@ class PRootService {
 
   /// Ensures the proot binary is extracted from APK assets and is executable.
   Future<void> _ensureProotBinary() async {
-    final prootFile = File(await TccPaths.prootBinary);
-    if (await prootFile.exists() && await prootFile.length() > 0) {
-      _prootPath = prootFile.path;
-      return;
-    }
-
-    // Try Termux-installed proot first (more reliable on Android).
+    // Try Termux-installed proot first (already executable, most reliable).
     const termuxProot = '/data/data/com.termux/files/usr/bin/proot';
     if (await File(termuxProot).exists()) {
+      _info('Using Termux proot: $termuxProot');
       _prootPath = termuxProot;
       return;
     }
 
-    // Fall back to extracting from APK assets.
-    final tmpDir = Directory.systemTemp.createTempSync('tcc_proot_');
+    final prootFile = File(await TccPaths.prootBinary);
+    if (await prootFile.exists() && await prootFile.length() > 0) {
+      // Check if it's executable.
+      final stat = await prootFile.stat();
+      final isExec = stat.mode & 0x49 != 0; // Check owner/group/other execute bits
+      if (isExec) {
+        _info('Using cached proot: ${prootFile.path}');
+        _prootPath = prootFile.path;
+        return;
+      }
+      _info('Cached proot exists but not executable, re-extracting...');
+      await prootFile.delete();
+    }
+
+    // Extract from APK assets to cache directory (allows execution on newer Android).
+    _info('Extracting proot from APK assets...');
     try {
       final byteData = await rootBundle.load('assets/core/proot-arm64');
       final bytes = byteData.buffer.asUint8List();
+      _info('Proot asset size: ${bytes.length} bytes');
 
-      // Ensure parent directory exists.
       await prootFile.parent.create(recursive: true);
       await prootFile.writeAsBytes(bytes, flush: true);
 
-      // chmod +x
-      await Process.run('chmod', ['755', prootFile.path]);
+      // Try to make executable.
+      final chmodResult = await Process.run('chmod', ['755', prootFile.path]);
+      _info('chmod exit code: ${chmodResult.exitCode}');
+
+      // Verify it's actually executable.
+      final testResult = await Process.run(prootFile.path, ['--version']);
+      _info('proot --version exit code: ${testResult.exitCode}');
+
+      if (testResult.exitCode != 0) {
+        _error('proot not executable after chmod, trying alternative...');
+        // Try copying to code_cache which might have different SELinux context
+        final altPath = '${Directory.systemTemp.path}/proot';
+        await File(altPath).writeAsBytes(bytes, flush: true);
+        await Process.run('chmod', ['755', altPath]);
+        final altTest = await Process.run(altPath, ['--version']);
+        if (altTest.exitCode == 0) {
+          _info('Alternative proot path works: $altPath');
+          _prootPath = altPath;
+          return;
+        }
+        throw StateError('Cannot execute proot binary. SELinux may be blocking execution.');
+      }
 
       _prootPath = prootFile.path;
-    } finally {
-      if (await tmpDir.exists()) {
-        await tmpDir.delete(recursive: true);
-      }
+    } catch (e) {
+      _error('Failed to extract proot: $e');
+      rethrow;
     }
   }
 
@@ -271,15 +299,28 @@ class PRootService {
   // Node.js installation
   // ---------------------------------------------------------------------------
 
-  /// Installs Node.js inside the rootfs via Alpine's apk package manager.
+  /// Installs Node.js inside the rootfs.
   ///
-  /// Idempotent — skips if `node` is already on the PATH inside the rootfs.
+  /// Idempotent — skips if `node` is already available in the rootfs.
+  /// The CI build bundles Node.js at /usr/bin/node, so this is usually a no-op.
   Future<void> _installNodeJs() async {
-    // Quick check: does node exist inside the versioned bin?
-    final nodeFile = File(await TccPaths.nodeBinary);
-    if (await nodeFile.exists()) return;
-
     final rootfs = await TccPaths.rootfs;
+
+    // Check if node exists at common locations.
+    final nodeInUsrBin = File('$rootfs/usr/bin/node');
+    if (await nodeInUsrBin.exists()) {
+      _info('Node.js already installed at /usr/bin/node');
+      return;
+    }
+
+    final nodeInVersionedBin = File(await TccPaths.nodeBinary);
+    if (await nodeInVersionedBin.exists()) {
+      _info('Node.js already installed at versioned path');
+      return;
+    }
+
+    // Node.js not found — try to install via apk (requires working proot).
+    _info('Node.js not found, attempting apk install...');
     final apkCache = Directory(p.join(rootfs, 'var', 'cache', 'apk'));
     await apkCache.create(recursive: true);
 
@@ -302,7 +343,33 @@ class PRootService {
   /// version directory.
   Future<void> _installClaudeCode() async {
     final versionsDir = await TccPaths.versionsDir;
-    await Directory(versionsDir).create(recursive: true);
+    final currentDir = await TccPaths.currentVersion;
+
+    // Check if Claude Code is already installed at the current symlink.
+    final claudeBin = File('$currentDir/bin/claude');
+    if (await claudeBin.exists()) {
+      _info('Claude Code already installed at $currentDir');
+      return;
+    }
+
+    // Check if there's a versioned directory with Claude Code.
+    final versionsDirObj = Directory(versionsDir);
+    if (await versionsDirObj.exists()) {
+      await for (final entity in versionsDirObj.list()) {
+        if (entity is Directory && entity.path != currentDir) {
+          final bin = File('${entity.path}/bin/claude');
+          if (await bin.exists()) {
+            _info('Found existing Claude Code at ${entity.path}, updating symlink');
+            await _switchCurrentSymlink(entity.path);
+            return;
+          }
+        }
+      }
+    }
+
+    // Claude Code not found — try to install via npm (requires working proot).
+    _info('Claude Code not found, attempting npm install...');
+    await versionsDirObj.create(recursive: true);
 
     final versionDir = Directory(p.join(
       versionsDir,
@@ -310,11 +377,9 @@ class PRootService {
     ));
     await versionDir.create(recursive: true);
 
-    // Create the bin directory that the symlink will eventually point to.
     final binDir = Directory(p.join(versionDir.path, 'bin'));
     await binDir.create(recursive: true);
 
-    // Install @anthropic-ai/claude-code globally into versionDir.
     final result = await runInRootfs(
       'npm install '
       '--prefix ${versionDir.path} '
