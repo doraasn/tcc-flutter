@@ -43,6 +43,7 @@ class MessageInputView(context: Context) : FrameLayout(context) {
         "/clear" to "清除当前对话",
         "/help" to "显示帮助信息",
         "/model" to "切换模型",
+        "/run" to "执行本机命令",
         "/temperature" to "设置温度参数"
     )
 
@@ -82,6 +83,7 @@ class MessageInputView(context: Context) : FrameLayout(context) {
                         val cmd = if (spaceIndex == -1) text else text.substring(0, spaceIndex)
                         val args = if (spaceIndex == -1) null else text.substring(spaceIndex + 1).trim()
                         onCommandListener?.invoke(cmd, args ?: "")
+                        editText.setText("")
                     } else {
                         onSendListener?.invoke(text)
                         editText.setText("")
@@ -138,6 +140,7 @@ class MessageInputView(context: Context) : FrameLayout(context) {
                                 val cmd = if (spaceIndex == -1) text else text.substring(0, spaceIndex)
                                 val args = if (spaceIndex == -1) null else text.substring(spaceIndex + 1).trim()
                                 onCommandListener?.invoke(cmd, args ?: "")
+                                setText("")
                             } else {
                                 onSendListener?.invoke(text)
                                 setText("")

@@ -6,6 +6,9 @@ android/debug.keystore
 
 # Android SDK
 android/android-35/
+android/android-sdk/
+android/sdk_old_tmp/
+android/cmdline-tools*.zip
 
 # Build intermediates
 android/aapt_build/
@@ -28,6 +31,8 @@ template-test/
 
 # Termux bundle (too large for git, generated locally by bundle.sh)
 android/assets/termux-bundle.*
+android/assets/bootstrap-aarch64.zip
+android/termux-releases.json
 
 # APK files (built artifacts)
 *.apk

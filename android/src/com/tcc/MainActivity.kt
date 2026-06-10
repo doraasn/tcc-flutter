@@ -18,6 +18,7 @@ import android.widget.Toast
 import android.util.Log
 import com.tcc.api.ClaudeCli
 import com.tcc.api.ClaudeCli.StreamEvent
+import com.tcc.api.CommandExecutor
 import com.tcc.data.ConfigManager
 import com.tcc.data.ConversationManager
 import com.tcc.model.Conversation
@@ -140,12 +141,11 @@ class MainActivity : Activity() {
         // 隐藏系统 ActionBar
         try { actionBar?.hide() } catch (_: Exception) {}
 
-        // Init
-        if (!TermuxBootstrap.isInstalled(this)) {
-            showSetup()
-        } else {
-            onReady()
+        // Init: 对话优先使用 HTTP 模式，Termux/Claude CLI 作为工具页的可选环境。
+        if (!TermuxBootstrap.hasBundledEnvironment(this)) {
+            Toast.makeText(this, "未内置 Termux 环境，CLI 工具不可用", Toast.LENGTH_LONG).show()
         }
+        onReady()
     }
 
     private fun showSetup() {
@@ -437,8 +437,6 @@ class MainActivity : Activity() {
 
         if (currentConv == null) newConversation()
         val conv = currentConv ?: return
-        if (!TermuxBootstrap.isInstalled(this)) { showToast("环境准备中…"); return }
-
         // Create messages
         val userMsg = Message(role = "user", content = text, timestamp = System.currentTimeMillis())
         conv.messages.add(userMsg); chatList.addMessage(userMsg)
@@ -516,6 +514,7 @@ class MainActivity : Activity() {
                     appendLine("## TCC 命令帮助"); appendLine()
                     appendLine("/clear - 清除当前对话"); appendLine("/help - 显示此帮助信息")
                     appendLine("/model - 切换模型"); appendLine("/context - 显示统计信息")
+                    appendLine("/run <命令> - 执行本机命令")
                     appendLine("/compact - 保留最近10条消息")
                 }
                 currentConv?.let { c ->
@@ -531,6 +530,7 @@ class MainActivity : Activity() {
                 val conv = currentConv
                 showToast("消息: ${conv?.messages?.size ?: 0} | 字符: ${conv?.messages?.sumOf { it.content.length } ?: 0} | 费用: $${"%.4f".format(config.getTotalCost())}")
             }
+            "/run" -> runDirectCommand(args)
             "/compact" -> {
                 currentConv?.let { c ->
                     if (c.messages.size > 10) { val kept = c.messages.takeLast(10).toMutableList(); c.messages.clear(); c.messages.addAll(kept); chatList.setMessages(c.messages); convManager.saveConversation(c) }
@@ -539,6 +539,47 @@ class MainActivity : Activity() {
             }
             else -> showToast("未知命令: $cmd。输入 /help 查看帮助")
         }
+    }
+
+    private fun runDirectCommand(args: String?) {
+        val command = args?.trim().orEmpty()
+        if (command.isEmpty()) {
+            showToast("用法: /run <命令>")
+            return
+        }
+        if (currentConv == null) newConversation()
+        val conv = currentConv ?: return
+        val userMsg = Message(role = "user", content = "/run $command", timestamp = System.currentTimeMillis())
+        conv.messages.add(userMsg)
+        chatList.addMessage(userMsg)
+
+        val assistantMsg = Message(
+            role = "assistant",
+            content = "执行中...\n\n`$ $command`",
+            timestamp = System.currentTimeMillis(),
+            isStreaming = true
+        )
+        conv.messages.add(assistantMsg)
+        chatList.addMessage(assistantMsg)
+        input.isEnabled = false
+        isStreaming = true
+
+        Thread {
+            val result = CommandExecutor.run(this, command)
+            val output = "```text\n${result.toToolText()}\n```"
+            mainHandler.post {
+                isStreaming = false
+                input.isEnabled = true
+                val idx = conv.messages.size - 1
+                if (idx >= 0 && conv.messages[idx].role == "assistant") {
+                    conv.messages[idx] = conv.messages[idx].copy(content = output, isStreaming = false)
+                    chatList.updateLastMessage(conv.messages[idx])
+                    convManager.updateMessage(conv.id, idx, conv.messages[idx])
+                }
+                convManager.saveConversation(conv)
+                sidebar.setConversations(convManager.listConversations())
+            }
+        }.start()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); rootView.requestLayout() }

@@ -28,11 +28,6 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
         private const val TEXT_TERTIARY = 0xFF5E5E66.toInt()
         private const val SUCCESS = 0xFF00C853.toInt()
         private const val ERROR = 0xFFFF5252.toInt()
-        private val LIBC_PATHS = listOf(
-            "/data/data/com.termux/files/usr/lib/libc.so",
-            "/system/lib/libc.so",
-            "/system/lib64/libc.so"
-        )
     }
 
     var onClose: (() -> Unit)? = null
@@ -48,6 +43,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     private var storageFreeText: TextView? = null
     private var storageTotalText: TextView? = null
     private var larkAuthText: TextView? = null
+    private var installButton: Button? = null
 
     init {
         setBackgroundColor(BG)
@@ -127,7 +123,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     // 创建分区标题
     private fun createSectionTitle(title: String): TextView {
         return TextView(context).apply {
-            text = title.uppercase()
+            text = title.toUpperCase(java.util.Locale.US)
             setTextColor(TEXT_SECONDARY)
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
@@ -203,6 +199,20 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
         claudeStatusDot = createStatusDot()
         claudeStatusText = createStatusLabel("检查中…")
         section.addView(createStatusRow("Claude Code", claudeStatusDot!!, claudeStatusText!!))
+
+        installButton = Button(context).apply {
+            text = "安装可选 CLI 环境"
+            setTextColor(TEXT_PRIMARY)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setBackgroundDrawable(createRoundedDrawable(ACCENT, dp(10)))
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
+            }
+            setOnClickListener { installClaudeRuntime() }
+        }
+        section.addView(installButton)
 
         return section
     }
@@ -330,6 +340,27 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
         checkLarkAuth()
     }
 
+    private fun installClaudeRuntime() {
+        installButton?.isEnabled = false
+        installButton?.text = "准备安装 CLI…"
+        Thread {
+            val progress: (String) -> Unit = { msg ->
+                postOnUi { installButton?.text = msg }
+            }
+            val baseOk = if (TermuxBootstrap.isInstalled(context)) {
+                true
+            } else {
+                TermuxBootstrap.install(context, progress)
+            }
+            val ok = baseOk && TermuxBootstrap.installClaudeRuntime(context, progress)
+            postOnUi {
+                installButton?.isEnabled = true
+                installButton?.text = if (ok) "CLI 环境已就绪" else "CLI 安装失败，可重试"
+                refresh()
+            }
+        }.start()
+    }
+
     // 附加到窗口时自动刷新
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -357,12 +388,30 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     private fun checkCommand(command: String, arg: String, dot: View?, statusText: TextView?) {
         try {
             val prefix = TermuxBootstrap.getPrefixDir(context)
-            val binPath = File(prefix, "bin/$command").absolutePath
-            // claude 是非 PIE 二进制，需要用 execGlibcBinary
+            val binFile = File(prefix, "bin/$command")
             val proc = if (command == "claude") {
-                TermuxBootstrap.execGlibcBinary(context, binPath, arg)
+                val claudeExe = File(prefix, "bin/claude.exe")
+                val claudeScript = File(prefix, "bin/claude")
+                val claudeFile = if (claudeExe.isFile) claudeExe else claudeScript
+                if (!claudeFile.isFile) {
+                    postOptionalStatus("HTTP模式可用", dot, statusText, true)
+                    return
+                }
+                if (claudeExe.isFile) {
+                    TermuxBootstrap.execGlibcBinary(context, claudeExe.absolutePath, arg)
+                } else {
+                    TermuxBootstrap.execBash(context, "${shellQuote(claudeFile.absolutePath)} $arg")
+                }
             } else {
-                TermuxBootstrap.execInTermux(context, binPath, arg)
+                if (!binFile.isFile) {
+                    if (command == "node") {
+                        postOptionalStatus("HTTP模式无需Node", dot, statusText)
+                        return
+                    }
+                    postCommandMissing(command, dot, statusText)
+                    return
+                }
+                TermuxBootstrap.execInTermux(context, binFile.absolutePath, arg)
             }
             val output = proc.inputStream.bufferedReader().readText().trim()
             val exitCode = proc.waitFor()
@@ -374,7 +423,7 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
                     statusText?.setTextColor(SUCCESS)
                 } else {
                     dot?.setBackgroundDrawable(createRoundedDrawable(ERROR, dp(5)))
-                    statusText?.text = "${command}: 未找到"
+                    statusText?.text = firstLine ?: "$command: exit $exitCode"
                     statusText?.setTextColor(ERROR)
                 }
             }
@@ -388,17 +437,40 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     }
 
     // 检查 libc 库是否存在
+    private fun postCommandMissing(command: String, dot: View?, statusText: TextView?) {
+        postOnUi {
+            dot?.setBackgroundDrawable(createRoundedDrawable(ERROR, dp(5)))
+            statusText?.text = "${command}: 未找到"
+            statusText?.setTextColor(ERROR)
+        }
+    }
+
+    private fun postOptionalStatus(text: String, dot: View?, statusText: TextView?, successDot: Boolean = false) {
+        postOnUi {
+            dot?.setBackgroundDrawable(createRoundedDrawable(if (successDot) SUCCESS else TEXT_TERTIARY, dp(5)))
+            statusText?.text = text
+            statusText?.setTextColor(if (successDot) SUCCESS else TEXT_SECONDARY)
+        }
+    }
+
+    private fun shellQuote(value: String): String {
+        return "'" + value.replace("'", "'\"'\"'") + "'"
+    }
+
     private fun checkLibcFile(dot: View?, statusText: TextView?) {
-        val found = LIBC_PATHS.any { File(it).exists() }
+        val prefix = TermuxBootstrap.getPrefixDir(context)
+        val linker = File(prefix, "glibc/lib/ld-linux-aarch64.so.1")
+        val libc = File(prefix, "glibc/lib/libc.so.6")
+        val found = linker.isFile && libc.isFile
         postOnUi {
             if (found) {
                 dot?.setBackgroundDrawable(createRoundedDrawable(SUCCESS, dp(5)))
                 statusText?.text = "已安装"
                 statusText?.setTextColor(SUCCESS)
             } else {
-                dot?.setBackgroundDrawable(createRoundedDrawable(ERROR, dp(5)))
-                statusText?.text = "未找到"
-                statusText?.setTextColor(ERROR)
+                dot?.setBackgroundDrawable(createRoundedDrawable(TEXT_TERTIARY, dp(5)))
+                statusText?.text = "CLI可选"
+                statusText?.setTextColor(TEXT_SECONDARY)
             }
         }
     }
@@ -412,9 +484,9 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
                 larkStatusText?.text = "可用"
                 larkStatusText?.setTextColor(SUCCESS)
             } else {
-                larkStatusDot?.setBackgroundDrawable(createRoundedDrawable(ERROR, dp(5)))
-                larkStatusText?.text = "未找到"
-                larkStatusText?.setTextColor(ERROR)
+                larkStatusDot?.setBackgroundDrawable(createRoundedDrawable(TEXT_TERTIARY, dp(5)))
+                larkStatusText?.text = "可选未安装"
+                larkStatusText?.setTextColor(TEXT_SECONDARY)
             }
         }
     }
@@ -444,6 +516,20 @@ class SystemStatusView(context: Context) : FrameLayout(context) {
     // 检查 Lark 认证状态
     private fun checkLarkAuth() {
         Thread {
+            if (!LarkClient.hasNode(context)) {
+                postOnUi {
+                    larkAuthText?.text = "当前使用 HTTP 对话模式；lark-cli 未安装，飞书工具暂不可用"
+                    larkAuthText?.setTextColor(TEXT_SECONDARY)
+                }
+                return@Thread
+            }
+            if (!LarkClient.isInstalled(context)) {
+                postOnUi {
+                    larkAuthText?.text = "lark-cli 未安装，飞书工具暂不可用"
+                    larkAuthText?.setTextColor(TEXT_SECONDARY)
+                }
+                return@Thread
+            }
             val status = LarkClient.authStatus(context)
             postOnUi {
                 larkAuthText?.text = status

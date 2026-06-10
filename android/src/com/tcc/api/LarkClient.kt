@@ -9,25 +9,40 @@ import java.io.InputStreamReader
 // lark-cli 命令行包装器
 object LarkClient {
 
+    fun hasNode(context: Context): Boolean {
+        val prefix = TermuxBootstrap.getPrefixDir(context)
+        return File(prefix, "bin/node").isFile
+    }
+
+    fun isInstalled(context: Context): Boolean {
+        val prefix = TermuxBootstrap.getPrefixDir(context)
+        return File(prefix, "bin/lark-cli").isFile
+    }
+
     // 检查 lark-cli 是否可用
     fun isAvailable(context: Context): Boolean {
-        return try {
-            val prefix = TermuxBootstrap.getPrefixDir(context)
-            val binPath = File(prefix, "bin/lark-cli").absolutePath
-            val proc = TermuxBootstrap.execInTermux(context, binPath, "--help")
-            val exitCode = proc.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
-            false
-        }
+        if (!hasNode(context) || !isInstalled(context)) return false
+        return !execute(context, "--help").startsWith("Error")
     }
 
     // 执行 lark-cli 命令
     fun execute(context: Context, vararg args: String): String {
         return try {
             val prefix = TermuxBootstrap.getPrefixDir(context)
-            val binPath = File(prefix, "bin/lark-cli").absolutePath
-            val pb = TermuxBootstrap.execInTermux(context, binPath, *args)
+            val nodePath = File(prefix, "bin/node")
+            val cliPath = File(prefix, "bin/lark-cli")
+            if (!nodePath.isFile) {
+                return "Error: Node.js 未安装，请先安装/修复 Claude 环境"
+            }
+            if (!cliPath.isFile) {
+                return "Error: lark-cli 未安装，请先安装/修复 Claude 环境"
+            }
+            val pb = TermuxBootstrap.execInTermux(
+                context,
+                nodePath.absolutePath,
+                cliPath.canonicalPath,
+                *args
+            )
 
             // Read stdout
             val stdoutReader = BufferedReader(InputStreamReader(pb.inputStream))
